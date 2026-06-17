@@ -514,7 +514,7 @@ body {
 
     #calendario .fc .fc-daygrid-event-harness,
     .wrapper-eventos #calendario .fc .fc-daygrid-event-harness {
-        margin-top: 1px !important;
+        margin-top: 0 !important;
     }
 
     #calendario .fc .fc-daygrid-event,
@@ -525,8 +525,13 @@ body {
 
     #calendario .fc .fc-daygrid-event .fc-event-main,
     .wrapper-eventos #calendario .fc .fc-daygrid-event .fc-event-main {
-        padding: 1px 3px !important;
+        padding: 0 2px !important;
         line-height: 1.05 !important;
+    }
+
+    #calendario .fc .fc-daygrid-event .fc-event-main-frame,
+    .wrapper-eventos #calendario .fc .fc-daygrid-event .fc-event-main-frame {
+        padding: 0 !important;
     }
 
     #calendario .fc .fc-event-title,
