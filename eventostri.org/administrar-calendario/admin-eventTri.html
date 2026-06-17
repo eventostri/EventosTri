@@ -1,0 +1,119 @@
+<div class="container-admin">
+  
+  <div class="panel-config">
+    <div style="width: 100%; display: flex; flex-wrap: wrap; gap: 15px;">
+      <h3 style="color: #72aee6; margin-bottom: 10px; width: 100%; margin-top: 0;">🔑 Conexión Segura con GitHub</h3>
+      <div class="form-group" style="flex: 2; min-width: 250px;">
+        <label for="cToken" style="color: #eee;">GitHub Personal Access Token (Classic)</label>
+        <input type="password" id="cToken" placeholder="ghp_xxxxxxxxxxxxxxxxxxxxxxxx" style="background: #32373c; border: 1px solid #4f5459; color: #fff;">
+      </div>
+      <div class="form-group" style="flex: 2; min-width: 250px;">
+        <label for="cGistId" style="color: #eee;">ID de tu Gist GitHub</label>
+        <input type="text" id="cGistId" placeholder="Ej. 7a1a2b3c4d5e6f..." style="background: #32373c; border: 1px solid #4f5459; color: #fff;">
+      </div>
+      <div class="form-group" style="flex: 1; min-width: 150px;">
+        <button type="button" id="btnCargarGist" class="btn-load btn-block">🔄 Descargar de la Nube</button>
+      </div>
+      <div class="form-group" style="flex: 1; min-width: 150px;">
+        <button type="button" id="btnGuardarGist" class="btn-cloud btn-block">☁️ Guardar en la Nube</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="cuerpo-admin">
+    <div class="panel-form">
+      <h3 id="tituloFormulario" style="color: #0073aa; margin-top: 0;">Agregar Nuevo Evento</h3>
+      <div id="mensajeEstado" class="mensaje-estado" role="status" aria-live="polite"></div>
+      <form id="formEvento">
+        <div class="preview-panel" id="previewPanel" style="display: none;">
+          <h4 style="margin: 0 0 10px 0; color: #0073aa;">Vista previa</h4>
+          <div class="preview-content">
+            <div class="preview-thumb" id="previewThumb"></div>
+            <div>
+              <div class="preview-title" id="previewTitle">Título del evento</div>
+              <div class="preview-meta" id="previewMeta">Fecha · Lugar</div>
+              <div class="preview-desc" id="previewDesc">Descripción breve</div>
+            </div>
+          </div>
+        </div>
+        <div class="form-group">
+          <label for="fTitulo">Título del Evento *</label>
+          <input type="text" id="fTitulo" required="" placeholder="Ej. Maratón MTB Desierto">
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label for="fFecha">Fecha y Hora *</label>
+            <input type="datetime-local" id="fFecha" required="">
+          </div>
+          <div class="form-group">
+            <label for="fEstado">Estado (YUC / CAM / QROO)</label>
+            <select id="fEstado">
+              <option value="YUC">YUC</option>
+              <option value="CAM">CAM</option>
+              <option value="QROO">QROO</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-group">
+          <label for="fLugar">📍 Lugar / Ubicación</label>
+          <input type="text" id="fLugar" placeholder="Ej. Mérida, Yucatán">
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label for="fTipos">🏷️ Tipos (Separados por coma)</label>
+            <input type="text" id="fTipos" placeholder="Ej. MTB, Ruta">
+          </div>
+          <div class="form-group">
+            <label for="fDistancias">🏃‍♂️ Distancias</label>
+            <input type="text" id="fDistancias" placeholder="Ej. 60 km, 100 km">
+          </div>
+        </div>
+        <div class="form-group">
+          <label for="fLink">🔗 Enlace de Información (URL)</label>
+          <input type="url" id="fLink" placeholder="https://...">
+        </div>
+        <div class="form-group">
+          <label for="fImagen">🖼️ URL de la Imagen</label>
+          <input type="url" id="fImagen" placeholder="https://...">
+        </div>
+        <div class="form-group">
+          <label for="fDescripcion">📝 Descripción</label>
+          <textarea id="fDescripcion" rows="3" placeholder="Detalles..."></textarea>
+        </div>
+        <div class="form-actions">
+          <button type="button" id="btnEnviarEvento" class="btn-block">Añadir a la Lista</button>
+          <button type="button" id="btnCancelarEdicion" class="btn-secondary" style="display: none;">Cancelar edición</button>
+        </div>
+      </form>
+    </div>
+
+    <div class="panel-tabla">
+      <div class="table-tools">
+        <div>
+          <h3 style="color: #0073aa; margin-top: 0; margin-bottom: 0;">Eventos en esta Sesión</h3>
+          <span id="contadorEventos" class="contador-eventos">0 eventos</span>
+        </div>
+        <input type="text" id="inputBuscar" class="search-input" placeholder="🔍 Filtrar por texto...">
+      </div>
+      
+      <div class="table-container">
+        <table id="tablaEventos">
+          <thead>
+            <tr>
+              <th id="thTitulo">Título</th>
+              <th id="thFecha">Fecha</th>
+              <th id="thLugar">Lugar</th>
+              <th id="thEstado">Estado</th>
+              <th id="thTipos">Tipos</th>
+              <th>Acciones</th>
+            </tr>
+          </thead>
+          <tbody id="cuerpoTabla">
+            <tr><td colspan="5" style="text-align:center; color:#999;">Usa el botón naranja superior para importar tus eventos guardados.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+</div>

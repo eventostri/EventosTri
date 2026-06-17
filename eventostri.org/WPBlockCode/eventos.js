@@ -7,6 +7,7 @@
     let datosEventos = [];
     let calendarioInstancia = null;
     const urlJSON = 'https://gist.githubusercontent.com/alverpadilla/c49faeebe433ca13a6ddd54548e44980/raw/eventos.json';
+    const urlLogoCalendario = 'https://eventostri.org/wp-content/uploads/2026/01/cropped-eventostriicon.png';
 
     // 1. Inyección de estilos CSS internos
 
@@ -37,6 +38,37 @@
         if (!objeto) return "";
         const claveEncontrada = Object.keys(objeto).find(k => k.toLowerCase() === nombreClave.toLowerCase());
         return claveEncontrada ? objeto[claveEncontrada] : "";
+    }
+
+    function obtenerTiposArray(evento) {
+        const valor = obtenerPropiedad(evento, 'tipos');
+        return String(valor || '')
+            .split(',')
+            .map(t => t.trim())
+            .filter(Boolean);
+    }
+
+    function obtenerColorPorTipos(tipos) {
+        const texto = tipos.map(t => t.toLowerCase());
+        if (texto.some(t => t.includes('mtb'))) {
+            return {
+                backgroundColor: '#ffe2d7',
+                borderColor: '#f5a283',
+                textColor: '#9a3f1f'
+            };
+        }
+        if (texto.some(t => t.includes('running'))) {
+            return {
+                backgroundColor: '#dfeeff',
+                borderColor: '#86b9ff',
+                textColor: '#0d4c9a'
+            };
+        }
+        return {
+            backgroundColor: '#ece8ff',
+            borderColor: '#b6a7ff',
+            textColor: '#5a45c7'
+        };
     }
 
     function detectarFecha(evento) {
@@ -236,17 +268,30 @@
 
         txtCalendario.dataset.fcInicializado = 'true';
 
-        // Solo creamos el wrapper si no existe ya
-        if (!document.querySelector('.wrapper-eventos')) {
-            const wrapper = document.createElement('div');
+        let wrapper = document.querySelector('.wrapper-eventos');
+        if (!wrapper) {
+            wrapper = document.createElement('div');
             wrapper.className = 'wrapper-eventos';
-            txtCalendario.parentNode.insertBefore(wrapper, txtCalendario);
-            wrapper.appendChild(txtCalendario);
-            // Mover filtros al wrapper
-            const contenedorFiltros = document.querySelector('.filtros-container');
-            if (contenedorFiltros) {
-                wrapper.appendChild(contenedorFiltros);
+            if (txtCalendario.parentNode) {
+                txtCalendario.parentNode.insertBefore(wrapper, txtCalendario);
             }
+        }
+
+        if (wrapper !== txtCalendario.parentNode) {
+            wrapper.appendChild(txtCalendario);
+        }
+
+        const contenedorFiltros = document.querySelector('.filtros-container');
+        if (contenedorFiltros && !wrapper.contains(contenedorFiltros)) {
+            wrapper.appendChild(contenedorFiltros);
+        }
+
+        if (wrapper.firstChild !== txtCalendario) {
+            wrapper.insertBefore(txtCalendario, wrapper.firstChild);
+        }
+
+        if (contenedorFiltros && wrapper.lastChild !== contenedorFiltros) {
+            wrapper.appendChild(contenedorFiltros);
         }
 
         generarCheckboxes(datosEventos, 'tipos', 'filtro-tipo-container');
@@ -276,20 +321,23 @@
             });
         });
 
-        // Convertimos las llaves en un array para poder ordenarlo
-        const opcionesOrdenadas = Object.keys(conteoValores);
+        let opcionesOrdenadas = Object.keys(conteoValores);
 
-        // LÓGICA DE ORDENAMIENTO:
-        // Si estamos modificando el contenedor de "lugar", ordenamos por cantidad de eventos (mayor a menor)
-        // Si el conteo es idéntico, rompe el empate de forma alfabética.
         if (propiedad === 'lugar') {
-            opcionesOrdenadas.sort((a, b) => {
-                const diferencia = conteoValores[b] - conteoValores[a];
-                return diferencia !== 0 ? diferencia : a.localeCompare(b);
-            });
+            const topTres = opcionesOrdenadas
+                .slice()
+                .sort((a, b) => {
+                    const diferencia = conteoValores[b] - conteoValores[a];
+                    return diferencia !== 0 ? diferencia : a.localeCompare(b);
+                })
+                .slice(0, 3);
+
+            const resto = opcionesOrdenadas
+                .filter(opcion => !topTres.includes(opcion))
+                .sort((a, b) => a.localeCompare(b));
+
+            opcionesOrdenadas = topTres.concat(resto);
         } else {
-            // Para la propiedad 'tipos', priorizamos Running y MTB antes del resto,
-            // y dejamos el resto en orden alfabético.
             opcionesOrdenadas.sort((a, b) => {
                 const ordenPreferido = ['Running', 'MTB'];
                 const indiceA = ordenPreferido.indexOf(a);
@@ -323,10 +371,10 @@
                 const lugaresCheck = Array.from(document.querySelectorAll('#filtro-lugar-container input:checked')).map(i => i.value);
 
                 const filtrados = datosEventos.filter(evento => {
-                    const eTipo = obtenerPropiedad(evento, 'tipos');
+                    const eTipo = obtenerTiposArray(evento);
                     const eLugar = obtenerPropiedad(evento, 'lugar');
-                    const cTipo = tiposCheck.length === 0 || tiposCheck.some(t => eTipo && String(eTipo).includes(t));
-                    const cLugar = lugaresCheck.length === 0 || lugaresCheck.includes(eLugar);
+                    const cTipo = tiposCheck.length === 0 || tiposCheck.some(t => eTipo.some(tipo => tipo.toLowerCase() === t.toLowerCase()));
+                    const cLugar = lugaresCheck.length === 0 || lugaresCheck.some(l => String(eLugar).toLowerCase() === l.toLowerCase());
                     return cTipo && cLugar;
                 });
 
@@ -379,17 +427,35 @@
                 dayGridMonth: 'Mes',
                 timeGridWeek: 'Semana',
                 listMonth: 'Lista'
-            },            
+            },
             headerToolbar: {
-                start: 'prev,next',
-				end: 'title'
+                start: 'prev',
+                center: 'title',
+                end: 'next'
             },
             footerToolbar: {
                 start: 'today',
                 end: 'dayGridMonth,timeGridWeek,listMonth'
             },
-            eventTimeFormat: { hour: '2-digit', minute: '2-digit', meridiem: false, hour12: false },
+            eventTimeFormat: { hour: 'numeric', minute: '2-digit', meridiem: false, hour12: false, omitZeroMinute: true },
             events: eventosMapeados,
+
+            eventDidMount: function(info) {
+                const colores = obtenerColorPorTipos(info.event.extendedProps?.tipos || []);
+                const el = info.el;
+                if (!el) return;
+
+                el.style.backgroundColor = colores.backgroundColor;
+                el.style.borderColor = colores.borderColor;
+                el.style.color = colores.textColor;
+                el.style.opacity = '1';
+                el.style.boxShadow = 'inset 0 0 0 1px rgba(255,255,255,0.12)';
+
+                const title = el.querySelector('.fc-event-title');
+                if (title) {
+                    title.style.color = colores.textColor;
+                }
+            },
             eventClick: function(info) {
                 info.jsEvent.preventDefault();
                 mostrarDetalleEvento(info.event);
@@ -408,12 +474,18 @@
             const eDistancias = obtenerPropiedad(evento, 'distancias');
             const eImagen = obtenerPropiedad(evento, 'imagen');
             const eDescripcion = obtenerPropiedad(evento, 'descripcion');
+            const tiposArray = obtenerTiposArray(evento);
+            const colores = obtenerColorPorTipos(tiposArray);
 
             return {
                 title: eTitle,
                 start: eFechaRaw ? String(eFechaRaw).trim() : null,
                 url: eLink,
                 allDay: false,
+                backgroundColor: colores.backgroundColor,
+                borderColor: colores.borderColor,
+                textColor: colores.textColor,
+                classNames: ['evento-calendario'],
                 extendedProps: {
                     titulo: eTitle,
                     lugar: eLugar,
@@ -422,7 +494,8 @@
                     descripcion: eDescripcion,
                     link: eLink,
                     fecha_hora: eFechaRaw,
-                    fechaFormateada: formatearFecha(eFechaRaw)
+                    fechaFormateada: formatearFecha(eFechaRaw),
+                    tipos: tiposArray
                 }
             };
         }).filter(e => e.start !== null);
