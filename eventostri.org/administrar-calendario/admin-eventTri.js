@@ -1,9 +1,12 @@
 (function(){
+  // Administrador de eventos para Eventostri.org
+  // id 352
   let eventos = [];
   let colActual = '';
   let ordenAsc = true;
   let indiceEditando = -1;
-  const nombreArchivo = 'eventos.json';
+  const apiEventosUrl = '/wp-json/eventostri/v1/eventos';
+  const apiSyncUrl = '/wp-json/eventostri/v1/eventos/sync';
 
   function mostrarMensaje(texto, tipo = 'info') {
     const msg = document.getElementById('mensajeEstado');
@@ -19,8 +22,8 @@
   // Función principal de arranque seguro
   function verificarYArrancarAdmin() {
     // Comprobamos que los elementos esenciales del HTML ya existan en la página
-    const btnCargar = document.getElementById('btnCargarGist');
-    const btnGuardar = document.getElementById('btnGuardarGist');
+    const btnCargar = document.getElementById('btnCargarApi');
+    const btnGuardar = document.getElementById('btnGuardarApi');
     const formEvt = document.getElementById('formEvento');
     const inputBusq = document.getElementById('inputBuscar');
 
@@ -32,10 +35,6 @@
 
     // --- Si llegamos aquí, el HTML ya existe. Activamos la lógica ---
     
-    // Recupera credenciales previas del navegador
-    if(localStorage.getItem('git_token')) document.getElementById('cToken').value = localStorage.getItem('git_token');
-    if(localStorage.getItem('git_gistid')) document.getElementById('cGistId').value = localStorage.getItem('git_gistid');
-    
     // Vinculamos el ordenamiento a las columnas de la tabla
     if(document.getElementById('thTitulo')) document.getElementById('thTitulo').onclick = function() { ordenarTabla('Titulo'); };
     if(document.getElementById('thFecha')) document.getElementById('thFecha').onclick = function() { ordenarTabla('Fecha_Hora'); };
@@ -46,8 +45,8 @@
     // Activamos los escuchas de los botones principales
     btnCargar.disabled = false;
     btnGuardar.disabled = false;
-    btnCargar.addEventListener('click', descagarDeNube);
-    btnGuardar.addEventListener('click', guardarEnNube);
+    btnCargar.addEventListener('click', cargarDesdeWordPressAPI);
+    btnGuardar.addEventListener('click', sincronizarEnWordPressAPI);
 
     if (formEvt) {
       formEvt.addEventListener('submit', capturarFormulario);
@@ -78,13 +77,17 @@
     actualizarPreview();
   }
 
-  function guardarCredenciales() {
-    try {
-      localStorage.setItem('git_token', document.getElementById('cToken').value);
-      localStorage.setItem('git_gistid', document.getElementById('cGistId').value);
-    } catch (e) {
-      // El navegador puede bloquear el almacenamiento en algunos contextos.
+  function obtenerNonceRest() {
+    if (window.wpApiSettings && window.wpApiSettings.nonce) {
+      return window.wpApiSettings.nonce;
     }
+
+    const metaNonce = document.querySelector('meta[name="wp-rest-nonce"]');
+    if (metaNonce && metaNonce.content) {
+      return metaNonce.content;
+    }
+
+    return '';
   }
 
   function normalizarFechaLocal(valor) {
@@ -182,91 +185,67 @@
     mostrarMensaje('Se eliminó: ' + nombre, 'success');
   }
 
-  // ACCIÓN: Descargar datos
-  function descagarDeNube() {
-    const token = document.getElementById('cToken').value;
-    const gistId = document.getElementById('cGistId').value;
-    
-    if(!token || !gistId) return alert('Por favor rellena el Token y el ID del Gist.');
-    guardarCredenciales();
-
-    fetch('https://api.github.com/gists/' + encodeURIComponent(gistId), {
+  // ACCION: Cargar datos desde WordPress API
+  function cargarDesdeWordPressAPI() {
+    fetch(apiEventosUrl, {
       method: 'GET',
-      mode: 'cors',
-      credentials: 'omit',
-      headers: {
-        'Authorization': 'Bearer ' + token,
-        'Accept': 'application/vnd.github+json'
-      }
+      cache: 'no-store',
+      credentials: 'same-origin'
     })
     .then(res => {
-      if(!res.ok) throw new Error('No se pudo acceder al Gist. Verifica las llaves y sus permisos.');
+      if(!res.ok) throw new Error('No se pudo leer la API de WordPress. Verifica la ruta REST y que el sitio esté disponible.');
       return res.json();
     })
-    .then(gist => {
-      if(gist.files && gist.files[nombreArchivo]) {
-        try {
-          eventos = JSON.parse(gist.files[nombreArchivo].content);
-        } catch (e) {
-          throw new Error('El archivo del Gist no tiene un JSON válido.');
-        }
-        actualizarTabla();
-        resetearFormulario();
-        mostrarMensaje('Eventos cargados correctamente desde la nube.', 'success');
-      } else {
-        mostrarMensaje('No se encontró el archivo en el Gist. Se iniciará una lista limpia.', 'warning');
-        eventos = [];
-        actualizarTabla();
-        resetearFormulario();
+    .then(data => {
+      if (!Array.isArray(data)) {
+        throw new Error('La API devolvió un formato inválido. Se esperaba un arreglo de eventos.');
       }
+
+      eventos = data;
+      actualizarTabla();
+      resetearFormulario();
+      mostrarMensaje('Eventos cargados correctamente desde WordPress.', 'success');
     })
     .catch(err => {
       mostrarMensaje(err.message, 'error');
     });
   }
 
-  // ACCIÓN: Guardar datos
-  function guardarEnNube() {
-    const token = document.getElementById('cToken').value;
-    const gistId = document.getElementById('cGistId').value;
-    
-    if(!token || !gistId) return alert('Por favor rellena el Token y el ID del Gist.');
+  // ACCION: Sincronizar datos en WordPress API
+  function sincronizarEnWordPressAPI() {
     if(eventos.length === 0) return alert('No hay eventos en la lista para subir.');
-    
-    guardarCredenciales();
 
-    const datosCuerpo = {
-      description: "Actualización automática del calendario de eventos",
-      files: {
-        [nombreArchivo]: {
-          filename: nombreArchivo,
-          content: JSON.stringify(eventos, null, 2)
-        }
-      }
+    const nonce = obtenerNonceRest();
+    const headers = {
+      'Content-Type': 'application/json'
     };
 
-    fetch('https://api.github.com/gists/' + encodeURIComponent(gistId), {
-      method: 'PATCH',
-      mode: 'cors',
-      credentials: 'omit',
+    if (nonce) {
+      headers['X-WP-Nonce'] = nonce;
+    }
+
+    fetch(apiSyncUrl, {
+      method: 'POST',
+      credentials: 'same-origin',
       headers: {
-        'Authorization': 'Bearer ' + token,
-        'Accept': 'application/vnd.github+json',
-        'Content-Type': 'application/json'
+        ...headers
       },
-      body: JSON.stringify(datosCuerpo)
+      body: JSON.stringify(eventos)
     })
     .then(res => {
-      if(!res.ok) throw new Error('Error al actualizar en la nube. Asegúrate de que tu Token tenga permisos de escritura (Write access).');
+      if(!res.ok) {
+        if (res.status === 401 || res.status === 403) {
+          throw new Error('No autorizado para guardar. Inicia sesion en WordPress con un usuario editor/admin y verifica el nonce REST.');
+        }
+        throw new Error('Error al guardar en WordPress. Codigo HTTP: ' + res.status);
+      }
       return res.json();
     })
     .then(data => {
-      const contenidoEsperado = JSON.stringify(eventos, null, 2);
-      const contenidoReal = data && data.files && data.files[nombreArchivo] && data.files[nombreArchivo].content;
-      if (contenidoReal !== contenidoEsperado) {
-        throw new Error('La API respondió, pero el contenido del Gist no coincide con la lista actual.');
+      if (!data || data.ok !== true) {
+        throw new Error('La API respondio sin confirmar la sincronizacion.');
       }
-      mostrarMensaje('Gist actualizado correctamente. El calendario ya quedó sincronizado.', 'success');
+      mostrarMensaje('WordPress sincronizado correctamente. El calendario ya quedó actualizado.', 'success');
     })
     .catch(err => {
       mostrarMensaje(err.message, 'error');

@@ -1,4 +1,6 @@
 (function() {
+    // Calendario de eventos deportivos para Eventostri.org
+    // ID del bloque: 294
     if (window.__eventosCalendarioInicializado) {
         return;
     }
@@ -6,7 +8,7 @@
 
     let datosEventos = [];
     let calendarioInstancia = null;
-    const urlJSON = 'https://gist.githubusercontent.com/alverpadilla/c49faeebe433ca13a6ddd54548e44980/raw/eventos.json';
+    const urlJSON = '/wp-json/eventostri/v1/eventos';
     const urlLogoCalendario = 'https://eventostri.org/wp-content/uploads/2026/01/cropped-eventostriicon.png';
 
     // 1. Inyección de estilos CSS internos
@@ -24,7 +26,7 @@
     scriptFullCalendar.onload = () => {
         fetch(urlJSON, { cache: "no-store" })
             .then(response => {
-                if (!response.ok) throw new Error("Gist no responde");
+                if (!response.ok) throw new Error("La API de WordPress no responde");
                 return response.json();
             })
             .then(data => {

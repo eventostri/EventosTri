@@ -2,20 +2,18 @@
   
   <div class="panel-config">
     <div style="width: 100%; display: flex; flex-wrap: wrap; gap: 15px;">
-      <h3 style="color: #72aee6; margin-bottom: 10px; width: 100%; margin-top: 0;">🔑 Conexión Segura con GitHub</h3>
-      <div class="form-group" style="flex: 2; min-width: 250px;">
-        <label for="cToken" style="color: #eee;">GitHub Personal Access Token (Classic)</label>
-        <input type="password" id="cToken" placeholder="ghp_xxxxxxxxxxxxxxxxxxxxxxxx" style="background: #32373c; border: 1px solid #4f5459; color: #fff;">
-      </div>
-      <div class="form-group" style="flex: 2; min-width: 250px;">
-        <label for="cGistId" style="color: #eee;">ID de tu Gist GitHub</label>
-        <input type="text" id="cGistId" placeholder="Ej. 7a1a2b3c4d5e6f..." style="background: #32373c; border: 1px solid #4f5459; color: #fff;">
+      <h3 style="color: #72aee6; margin-bottom: 10px; width: 100%; margin-top: 0;">🔌 Conexión con WordPress API</h3>
+      <div class="form-group" style="flex: 2; min-width: 320px; margin-bottom: 0;">
+        <p style="margin: 0; color: #d0d7de; line-height: 1.5;">
+          Este panel carga y sincroniza los eventos usando la API REST de WordPress.
+          Para guardar cambios debes tener sesión iniciada con permisos de editor o administrador.
+        </p>
       </div>
       <div class="form-group" style="flex: 1; min-width: 150px;">
-        <button type="button" id="btnCargarGist" class="btn-load btn-block">🔄 Descargar de la Nube</button>
+        <button type="button" id="btnCargarApi" class="btn-load btn-block">🔄 Cargar desde WordPress</button>
       </div>
       <div class="form-group" style="flex: 1; min-width: 150px;">
-        <button type="button" id="btnGuardarGist" class="btn-cloud btn-block">☁️ Guardar en la Nube</button>
+        <button type="button" id="btnGuardarApi" class="btn-cloud btn-block">💾 Sincronizar en WordPress</button>
       </div>
     </div>
   </div>
@@ -109,7 +107,7 @@
             </tr>
           </thead>
           <tbody id="cuerpoTabla">
-            <tr><td colspan="5" style="text-align:center; color:#999;">Usa el botón naranja superior para importar tus eventos guardados.</td></tr>
+            <tr><td colspan="6" style="text-align:center; color:#999;">Usa "Cargar desde WordPress" para traer los eventos actuales.</td></tr>
           </tbody>
         </table>
       </div>
