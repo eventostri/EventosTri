@@ -15,6 +15,18 @@
       <div class="form-group" style="flex: 1; min-width: 150px;">
         <button type="button" id="btnGuardarApi" class="btn-cloud btn-block">💾 Sincronizar en WordPress</button>
       </div>
+      <div class="api-status-row">
+        <span id="wpAuthFlag" class="auth-pill state-pending">Verificando sesion...</span>
+        <span id="wpAuthDetails" class="auth-details">Comprobando autenticacion y permisos...</span>
+        <button type="button" id="btnVerificarSesion" class="btn-secondary btn-status">Verificar sesion</button>
+      </div>
+      <div class="api-log-wrap">
+        <div class="api-log-header">
+          <strong>Registro API</strong>
+          <button type="button" id="btnLimpiarLog" class="btn-secondary btn-log-clear">Limpiar</button>
+        </div>
+        <div id="apiLogList" class="api-log-list" aria-live="polite"></div>
+      </div>
     </div>
   </div>
 

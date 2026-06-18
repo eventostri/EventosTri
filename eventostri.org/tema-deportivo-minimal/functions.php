@@ -162,6 +162,64 @@ function eventostri_rest_sync_eventos(WP_REST_Request $request) {
     ));
 }
 
+function eventostri_rest_auth_status() {
+    nocache_headers();
+
+    $allow_cookie_bootstrap = defined('EVENTOSTRI_REST_COOKIE_BOOTSTRAP')
+        ? (bool) EVENTOSTRI_REST_COOKIE_BOOTSTRAP
+        : true;
+    $include_debug = defined('EVENTOSTRI_AUTH_STATUS_DEBUG')
+        ? (bool) EVENTOSTRI_AUTH_STATUS_DEBUG
+        : false;
+
+    // REST requests without X-WP-Nonce are treated as anonymous by core.
+    // Bootstrap user from the logged_in cookie so this endpoint can issue nonce.
+    if ($allow_cookie_bootstrap && !is_user_logged_in()) {
+        $logged_in_cookie_name = 'wordpress_logged_in_' . COOKIEHASH;
+        if (!empty($_COOKIE[$logged_in_cookie_name])) {
+            $validated_user_id = wp_validate_auth_cookie($_COOKIE[$logged_in_cookie_name], 'logged_in');
+            if ($validated_user_id) {
+                wp_set_current_user((int) $validated_user_id);
+            }
+        }
+    }
+
+    $logged_in = is_user_logged_in();
+    $can_sync = current_user_can('edit_posts');
+    $user = wp_get_current_user();
+
+    $response = array(
+        'ok' => true,
+        'logged_in' => (bool) $logged_in,
+        'can_sync' => (bool) $can_sync,
+        'nonce' => $logged_in ? wp_create_nonce('wp_rest') : '',
+        'user' => $logged_in ? array(
+            'id' => (int) $user->ID,
+            'name' => (string) $user->display_name,
+            'login' => (string) $user->user_login
+        ) : null
+    );
+
+    if ($include_debug) {
+        $debug_cookies = array();
+        foreach ($_COOKIE as $name => $value) {
+            if (strpos($name, 'wordpress') !== false) {
+                $debug_cookies[] = $name;
+            }
+        }
+        $response['debug'] = array(
+            'wordpress_cookies_seen' => $debug_cookies,
+            'current_user_id' => (int) get_current_user_id(),
+            'wp_user_id' => (int) $user->ID,
+            'session_id' => session_id(),
+            'cookie_hash' => COOKIEHASH,
+            'nonce_header_present' => !empty($_SERVER['HTTP_X_WP_NONCE'])
+        );
+    }
+
+    return rest_ensure_response($response);
+}
+
 function eventostri_registrar_rest_routes() {
     register_rest_route('eventostri/v1', '/eventos', array(
         'methods' => WP_REST_Server::READABLE,
@@ -175,6 +233,12 @@ function eventostri_registrar_rest_routes() {
         'permission_callback' => function () {
             return current_user_can('edit_posts');
         }
+    ));
+
+    register_rest_route('eventostri/v1', '/auth-status', array(
+        'methods' => array(WP_REST_Server::READABLE, WP_REST_Server::CREATABLE),
+        'callback' => 'eventostri_rest_auth_status',
+        'permission_callback' => '__return_true'
     ));
 }
 add_action('rest_api_init', 'eventostri_registrar_rest_routes');
