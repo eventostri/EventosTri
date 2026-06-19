@@ -1,0 +1,22 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Zip Theme: EventosTri",
+      "type": "shell",
+      "command": "powershell",
+      "args": [
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-Command",
+        "$ErrorActionPreference='Stop'; $workspace='${workspaceFolder}'; $siteRoot=''; $candidateA=Join-Path $workspace 'eventostri.org'; $candidateB=$workspace; if (Test-Path (Join-Path $candidateA 'tema-deportivo-minimal')) { $siteRoot=$candidateA } elseif (Test-Path (Join-Path $candidateB 'tema-deportivo-minimal')) { $siteRoot=$candidateB } else { throw \"Theme folder not found under: $workspace\" }; $themeDir=Join-Path $siteRoot 'tema-deportivo-minimal'; $distDir=Join-Path $siteRoot 'dist'; New-Item -ItemType Directory -Force -Path $distDir | Out-Null; $zipPath=Join-Path $distDir 'tema-deportivo-minimal.zip'; $maxRetries=4; $attempt=0; $success=$false; while (-not $success -and $attempt -lt $maxRetries) { $attempt++; try { if (Test-Path $zipPath) { Remove-Item $zipPath -Force }; Compress-Archive -Path $themeDir -DestinationPath $zipPath -CompressionLevel Optimal; $success=$true } catch { if ($attempt -lt $maxRetries) { Write-Host \"Intento $attempt fallido, reintentando en 3s...\"; Start-Sleep -Seconds 3 } else { throw } } }; $legacyRootZip=Join-Path $siteRoot 'tema-deportivo-minimal.zip'; if (Test-Path $legacyRootZip) { Remove-Item $legacyRootZip -Force }; Write-Host 'Created:' $zipPath; Write-Host 'Removed legacy root zip if present:' $legacyRootZip"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "group": "build",
+      "problemMatcher": []
+    }
+  ]
+}

@@ -1,15 +1,55 @@
 <?php
+function eventostri_debe_cargar_admin_v2() {
+    if (is_page(array('administrar-calendario', 'administrar-calendario-v2'))) {
+        return true;
+    }
+
+    if (!is_singular()) {
+        return false;
+    }
+
+    global $post;
+    if (!$post || !isset($post->post_content)) {
+        return false;
+    }
+
+    return has_shortcode($post->post_content, 'eventostri_admin_v2');
+}
+
+function eventostri_debe_cargar_calendario_publico() {
+    if (is_page('calendario')) {
+        return true;
+    }
+
+    if (!is_singular()) {
+        return false;
+    }
+
+    global $post;
+    if (!$post || !isset($post->post_content)) {
+        return false;
+    }
+
+    return has_shortcode($post->post_content, 'eventostri_calendario');
+}
+
 function cargar_scripts_deportivos() {
+    $theme_version = wp_get_theme()->get('Version');
+
     // Cargar siempre la hoja de estilos del tema
     wp_enqueue_style(
         'tema-deportivo-style',
         get_stylesheet_uri(),
         array(),
-        wp_get_theme()->get('Version')
+        $theme_version
     );
 
-    // Solo cargar FullCalendar en la página que necesites (ajusta 'calendario' por el slug de tu página)
-    if ( is_page('calendario') ) {
+    $cargar_admin_v2 = eventostri_debe_cargar_admin_v2();
+    $cargar_calendario_publico = eventostri_debe_cargar_calendario_publico();
+    $cargar_fullcalendar = $cargar_calendario_publico || $cargar_admin_v2;
+
+    // Cargar FullCalendar para calendario publico y admin v2.
+    if ($cargar_fullcalendar) {
         wp_enqueue_style(
             'fullcalendar-css',
             'https://cdn.jsdelivr.net/npm/fullcalendar@6.1.11/index.global.min.css',
@@ -25,10 +65,64 @@ function cargar_scripts_deportivos() {
             true
         );
     }
+
+    if ($cargar_admin_v2) {
+        wp_enqueue_style(
+            'eventostri-admin-v2-style',
+            get_template_directory_uri() . '/assets/admin-v2/admin-eventTri-v2.css',
+            array('tema-deportivo-style', 'fullcalendar-css'),
+            $theme_version
+        );
+
+        wp_enqueue_script(
+            'eventostri-admin-v2-script',
+            get_template_directory_uri() . '/assets/admin-v2/admin-eventTri-v2.js',
+            array('fullcalendar'),
+            $theme_version,
+            true
+        );
+    }
+
+    if ($cargar_calendario_publico) {
+        wp_enqueue_script(
+            'eventostri-calendario-script',
+            get_template_directory_uri() . '/assets/calendario/eventostri-calendario.js',
+            array('fullcalendar'),
+            $theme_version,
+            true
+        );
+
+        wp_localize_script('eventostri-calendario-script', 'eventostriCalendarioConfig', array(
+            'eventosUrl' => esc_url_raw(rest_url('eventostri/v1/eventos')),
+        ));
+    }
 }
 add_action('wp_enqueue_scripts', 'cargar_scripts_deportivos');
 
+function eventostri_shortcode_calendario() {
+    return '<div class="filtros-container"><div class="filtro-grupo"><label>Filtrar por Tipo de Evento:</label><div id="filtro-tipo-container" class="checkbox-group-box"></div></div><div class="filtro-grupo"><label>Filtrar por Ubicaci&#243;n:</label><div id="filtro-lugar-container" class="checkbox-group-box"></div></div></div><div id="calendario" class="calendario-grid"></div>';
+}
+add_shortcode('eventostri_calendario', 'eventostri_shortcode_calendario');
+
+function eventostri_shortcode_admin_v2() {
+    $template = get_template_directory() . '/assets/admin-v2/admin-eventTri-v2-template.php';
+    if (!file_exists($template)) {
+        return '<p>No se encontro la plantilla del admin v2.</p>';
+    }
+
+    ob_start();
+    include $template;
+    return ob_get_clean();
+}
+add_shortcode('eventostri_admin_v2', 'eventostri_shortcode_admin_v2');
+
 function configurar_tema_deportivo() {
+    add_theme_support('wp-block-styles');
+    add_theme_support('align-wide');
+    add_theme_support('responsive-embeds');
+    add_theme_support('editor-styles');
+    add_editor_style('editor-style.css');
+
     add_theme_support('custom-logo', array(
         'height'               => 100,
         'width'                => 100,
@@ -63,7 +157,10 @@ function eventostri_map_post_to_array($post_id) {
         'Distancias' => (string) get_post_meta($post_id, 'Distancias', true),
         'Link' => (string) get_post_meta($post_id, 'Link', true),
         'Imagen' => (string) get_post_meta($post_id, 'Imagen', true),
-        'Descripcion' => (string) get_post_meta($post_id, 'Descripcion', true)
+        'Descripcion' => (string) get_post_meta($post_id, 'Descripcion', true),
+        'Whatsapp' => (string) get_post_meta($post_id, 'Whatsapp', true),
+        'InscripcionOnLine' => (string) get_post_meta($post_id, 'InscripcionOnLine', true),
+        'Organizador' => (string) get_post_meta($post_id, 'Organizador', true)
     );
 }
 
@@ -81,7 +178,10 @@ function eventostri_normalizar_evento($ev) {
         'Distancias' => sanitize_text_field((string) ($ev['Distancias'] ?? '')),
         'Link' => esc_url_raw((string) ($ev['Link'] ?? '')),
         'Imagen' => esc_url_raw((string) ($ev['Imagen'] ?? '')),
-        'Descripcion' => sanitize_textarea_field((string) ($ev['Descripcion'] ?? ''))
+        'Descripcion' => sanitize_textarea_field((string) ($ev['Descripcion'] ?? '')),
+        'Whatsapp' => sanitize_text_field((string) ($ev['Whatsapp'] ?? '')),
+        'InscripcionOnLine' => esc_url_raw((string) ($ev['InscripcionOnLine'] ?? '')),
+        'Organizador' => sanitize_text_field((string) ($ev['Organizador'] ?? ''))
     );
 }
 
@@ -147,7 +247,19 @@ function eventostri_rest_sync_eventos(WP_REST_Request $request) {
             continue;
         }
 
-        $campos_meta = array('Fecha_Hora', 'Lugar', 'Estado', 'Tipos', 'Distancias', 'Link', 'Imagen', 'Descripcion');
+        $campos_meta = array(
+            'Fecha_Hora',
+            'Lugar',
+            'Estado',
+            'Tipos',
+            'Distancias',
+            'Link',
+            'Imagen',
+            'Descripcion',
+            'Whatsapp',
+            'InscripcionOnLine',
+            'Organizador'
+        );
 
         foreach ($campos_meta as $meta_key) {
             update_post_meta($post_id, $meta_key, $evento[$meta_key]);

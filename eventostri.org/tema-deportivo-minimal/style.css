@@ -43,6 +43,89 @@ body {
     line-height: 1.5;
 }
 
+html,
+body {
+    height: 100%;
+}
+
+.site-container {
+    margin-top: 0 !important;
+}
+
+.wp-site-blocks .site-container.page-calendario,
+.wp-site-blocks .site-container.page-admin-calendario,
+.wp-site-blocks .site-container.page-admin-calendario-v2 {
+    width: 100%;
+}
+
+.wp-site-blocks .site-container.page-admin-calendario .alignwide,
+.wp-site-blocks .site-container.page-admin-calendario-v2 .alignwide {
+    max-width: 1400px;
+}
+
+.site-header-admin {
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.92), rgba(247, 250, 255, 0.9));
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    margin-bottom: 12px;
+}
+
+.site-header-admin .site-title {
+    font-size: 1rem !important;
+}
+
+.site-header-admin .site-description {
+    font-size: 0.75rem !important;
+}
+
+.admin-shell {
+    max-width: 100% !important;
+    padding-bottom: 0;
+}
+
+.admin-shell main.wp-block-group {
+    margin-top: 0;
+    margin-bottom: 0;
+}
+
+.site-header {
+    display: flex;
+    align-items: center;
+    padding: 10px !important;
+    border-bottom: none !important;
+    width: 100%;
+    box-sizing: border-box;
+}
+
+.site-header .custom-logo,
+.site-header .custom-logo-link img,
+.site-header .wp-block-site-logo img {
+    width: 60px !important;
+    height: auto !important;
+    margin-right: 20px;
+}
+
+.site-info {
+    flex: 1;
+    min-width: 0;
+}
+
+.site-title {
+    font-size: 1.2rem !important;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    margin: 0;
+}
+
+.site-description {
+    font-size: 0.8rem !important;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    margin: 0;
+}
+
 .wrapper-eventos {
     display: flex;
     flex-direction: column;
@@ -416,6 +499,74 @@ body {
     gap: 4px !important;
 }
 
+/* Keep month grid at full width on first paint/reload */
+#calendario .fc .fc-scrollgrid,
+.wrapper-eventos #calendario .fc .fc-scrollgrid,
+#calendario .fc .fc-scrollgrid table,
+.wrapper-eventos #calendario .fc .fc-scrollgrid table,
+#calendario .fc .fc-daygrid-body,
+.wrapper-eventos #calendario .fc .fc-daygrid-body,
+#calendario .fc .fc-daygrid-body table,
+.wrapper-eventos #calendario .fc .fc-daygrid-body table,
+#calendario .fc .fc-scrollgrid-sync-table,
+.wrapper-eventos #calendario .fc .fc-scrollgrid-sync-table {
+    width: 100% !important;
+    min-width: 100% !important;
+}
+
+/* Tighten month-day cell content spacing without changing font sizes */
+#calendario .fc .fc-daygrid-day-frame,
+.wrapper-eventos #calendario .fc .fc-daygrid-day-frame {
+    padding-bottom: 0 !important;
+}
+
+#calendario .fc .fc-daygrid-day-events,
+.wrapper-eventos #calendario .fc .fc-daygrid-day-events {
+    margin-top: 0 !important;
+    margin-bottom: 0 !important;
+}
+
+#calendario .fc .fc-daygrid-event-harness,
+.wrapper-eventos #calendario .fc .fc-daygrid-event-harness {
+    margin-top: 0 !important;
+    margin-bottom: 0 !important;
+}
+
+#calendario .fc .fc-daygrid-event,
+.wrapper-eventos #calendario .fc .fc-daygrid-event {
+    margin-top: 0 !important;
+    margin-bottom: 0 !important;
+    padding-top: 0 !important;
+    padding-bottom: 0 !important;
+}
+
+#calendario .fc .fc-daygrid-event .fc-event-main,
+.wrapper-eventos #calendario .fc .fc-daygrid-event .fc-event-main,
+#calendario .fc .fc-daygrid-event .fc-event-main-frame,
+.wrapper-eventos #calendario .fc .fc-daygrid-event .fc-event-main-frame {
+    margin-top: 0 !important;
+    margin-bottom: 0 !important;
+    padding-top: 0 !important;
+    padding-bottom: 0 !important;
+}
+
+/* Force list view to use full available width */
+#calendario .fc .fc-list,
+.wrapper-eventos #calendario .fc .fc-list,
+#calendario .fc .fc-list-table,
+.wrapper-eventos #calendario .fc .fc-list-table,
+#calendario .fc .fc-list-table table,
+.wrapper-eventos #calendario .fc .fc-list-table table {
+    width: 100% !important;
+}
+
+#calendario .fc .fc-list-event,
+.wrapper-eventos #calendario .fc .fc-list-event,
+#calendario .fc .fc-list-event td,
+.wrapper-eventos #calendario .fc .fc-list-event td {
+    width: auto !important;
+}
+
 /* --- Adaptación Móvil --- */
 @media (max-width: 768px) {
     /* Compact page header area (not FullCalendar title) */
@@ -508,7 +659,7 @@ body {
     /* Compact day events so rows consume less vertical space */
     #calendario .fc .fc-daygrid-day-events,
     .wrapper-eventos #calendario .fc .fc-daygrid-day-events {
-        margin-top: 1px !important;
+        margin-top: 0 !important;
         margin-bottom: 0 !important;
     }
 
