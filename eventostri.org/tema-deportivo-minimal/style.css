@@ -1,7 +1,7 @@
 /*
-Theme Name: Tema Deportivo Minimalista
+Theme Name: EventosTri Calendar
 Theme URI: #
-Author: Alver y Gemini
+Author: Alver with Geminis' and Copilot Github's assistance
 Description: Tema minimalista para calendario de eventos deportivos.
 Version: 1.0
 */
@@ -322,6 +322,13 @@ body {
 .evento-modal-content {
     padding: 1.25rem;
     overflow-y: auto;
+    min-height: 0;
+}
+
+/* Public calendar modal: keep content scrollable when details exceed viewport height */
+.evento-modal-card:not(.evento-modal-card-form) .evento-modal-content {
+    max-height: calc(90vh - 2.5rem);
+    overflow-y: auto;
 }
 
 .evento-modal-title {
@@ -371,6 +378,13 @@ body {
 .evento-modal-link-wrap {
     display: flex;
     align-items: center;
+}
+
+.evento-modal-inscripcion-wrap,
+.evento-modal-whatsapp-wrap {
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
 }
 
 .evento-modal-url-link {
