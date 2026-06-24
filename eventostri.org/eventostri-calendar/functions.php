@@ -104,7 +104,7 @@ function cargar_scripts_deportivos() {
 add_action('wp_enqueue_scripts', 'cargar_scripts_deportivos');
 
 function eventostri_shortcode_calendario() {
-    return '<div class="filtros-container"><div class="filtro-grupo"><label>Filtrar por Tipo de Evento:</label><div id="filtro-tipo-container" class="checkbox-group-box"></div></div><div class="filtro-grupo"><label>Filtrar por Ubicaci&#243;n:</label><div id="filtro-lugar-container" class="checkbox-group-box"></div></div></div><div id="calendario" class="calendario-grid"></div>';
+    return '<div class="wrapper-eventos"><div class="search-container"><input type="text" id="evento-search-input" placeholder="Buscar eventos por nombre..." autocomplete="off" aria-label="Buscar eventos" aria-describedby="search-help"><button type="button" id="clear-search-btn" aria-label="Limpiar busqueda" style="display:none;">x</button><span id="search-help" class="sr-only">Escribe para filtrar eventos por nombre</span></div><div id="calendario" class="calendario-grid"></div><div class="filtros-container"><div class="filtro-grupo"><label>Filtrar por Tipo de Evento:</label><div id="filtro-tipo-container" class="checkbox-group-box"></div></div><div class="filtro-grupo"><label>Filtrar por Ubicaci&#243;n:</label><div id="filtro-lugar-container" class="checkbox-group-box"></div></div></div></div>';
 }
 add_shortcode('eventostri_calendario', 'eventostri_shortcode_calendario');
 
@@ -152,6 +152,9 @@ function eventostri_registrar_cpt_eventos() {
 add_action('init', 'eventostri_registrar_cpt_eventos');
 
 function eventostri_map_post_to_array($post_id) {
+    $visible_meta = get_post_meta($post_id, 'VisibleEnCalendario', true);
+    $visible_en_calendario = eventostri_normalizar_visible_en_calendario($visible_meta, true);
+
     return array(
         'Titulo' => (string) get_the_title($post_id),
         'Fecha_Hora' => (string) get_post_meta($post_id, 'Fecha_Hora', true),
@@ -164,14 +167,48 @@ function eventostri_map_post_to_array($post_id) {
         'Descripcion' => (string) get_post_meta($post_id, 'Descripcion', true),
         'Whatsapp' => (string) get_post_meta($post_id, 'Whatsapp', true),
         'InscripcionOnLine' => (string) get_post_meta($post_id, 'InscripcionOnLine', true),
-        'Organizador' => (string) get_post_meta($post_id, 'Organizador', true)
+        'Organizador' => (string) get_post_meta($post_id, 'Organizador', true),
+        'VisibleEnCalendario' => $visible_en_calendario
     );
+}
+
+function eventostri_normalizar_visible_en_calendario($valor, $fallback) {
+    if ($valor === null || $valor === '') {
+        return (bool) $fallback;
+    }
+
+    if (is_bool($valor)) {
+        return $valor;
+    }
+
+    if (is_numeric($valor)) {
+        return ((int) $valor) === 1;
+    }
+
+    $texto = strtolower(trim((string) $valor));
+    if ($texto === '') {
+        return (bool) $fallback;
+    }
+
+    if (in_array($texto, array('1', 'true', 'yes', 'si', 'on'), true)) {
+        return true;
+    }
+
+    if (in_array($texto, array('0', 'false', 'no', 'off'), true)) {
+        return false;
+    }
+
+    return (bool) $fallback;
 }
 
 function eventostri_normalizar_evento($ev) {
     if (!is_array($ev)) {
         return array();
     }
+
+    $visible_en_calendario = array_key_exists('VisibleEnCalendario', $ev)
+        ? eventostri_normalizar_visible_en_calendario($ev['VisibleEnCalendario'], false)
+        : false;
 
     return array(
         'Titulo' => sanitize_text_field((string) ($ev['Titulo'] ?? 'Evento deportivo')),
@@ -185,7 +222,8 @@ function eventostri_normalizar_evento($ev) {
         'Descripcion' => sanitize_textarea_field((string) ($ev['Descripcion'] ?? '')),
         'Whatsapp' => sanitize_text_field((string) ($ev['Whatsapp'] ?? '')),
         'InscripcionOnLine' => esc_url_raw((string) ($ev['InscripcionOnLine'] ?? '')),
-        'Organizador' => sanitize_text_field((string) ($ev['Organizador'] ?? ''))
+        'Organizador' => sanitize_text_field((string) ($ev['Organizador'] ?? '')),
+        'VisibleEnCalendario' => $visible_en_calendario
     );
 }
 
@@ -221,7 +259,7 @@ function eventostri_generar_csv_eventos() {
     ));
 
     $salida = fopen('php://temp', 'r+');
-    fputcsv($salida, array('Titulo', 'Fecha_Hora', 'Lugar', 'Estado', 'Tipos', 'Distancias', 'Link', 'Imagen', 'Descripcion', 'Whatsapp', 'InscripcionOnLine', 'Organizador'));
+    fputcsv($salida, array('Titulo', 'Fecha_Hora', 'Lugar', 'Estado', 'Tipos', 'Distancias', 'Link', 'Imagen', 'Descripcion', 'Whatsapp', 'InscripcionOnLine', 'Organizador', 'VisibleEnCalendario'));
 
     foreach ($consulta->posts as $post) {
         $evento = eventostri_map_post_to_array($post->ID);
@@ -237,7 +275,8 @@ function eventostri_generar_csv_eventos() {
             $evento['Descripcion'],
             $evento['Whatsapp'],
             $evento['InscripcionOnLine'],
-            $evento['Organizador']
+            $evento['Organizador'],
+            $evento['VisibleEnCalendario'] ? '1' : '0'
         ));
     }
 
@@ -341,11 +380,16 @@ function eventostri_rest_sync_eventos(WP_REST_Request $request) {
                 'Descripcion',
                 'Whatsapp',
                 'InscripcionOnLine',
-                'Organizador'
+                'Organizador',
+                'VisibleEnCalendario'
             );
 
             foreach ($campos_meta as $meta_key) {
-                update_post_meta($post_id, $meta_key, $evento[$meta_key]);
+                if ($meta_key === 'VisibleEnCalendario') {
+                    update_post_meta($post_id, $meta_key, $evento[$meta_key] ? '1' : '0');
+                } else {
+                    update_post_meta($post_id, $meta_key, $evento[$meta_key]);
+                }
             }
 
             $insertados++;

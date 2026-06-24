@@ -181,6 +181,33 @@
     return String(valor).slice(0, 16);
   }
 
+  function normalizarBoolean(valor, fallback) {
+    if (valor === null || valor === undefined || valor === '') {
+      return fallback;
+    }
+    if (typeof valor === 'boolean') {
+      return valor;
+    }
+    if (typeof valor === 'number') {
+      return valor === 1;
+    }
+    const texto = String(valor).trim().toLowerCase();
+    if (texto === '1' || texto === 'true' || texto === 'yes' || texto === 'si' || texto === 'on') return true;
+    if (texto === '0' || texto === 'false' || texto === 'no' || texto === 'off') return false;
+    return fallback;
+  }
+
+  function esEventoPasado(evento) {
+    const fechaPlano = String(evento.Fecha_Hora || '').split(/[T ]/)[0];
+    const partes = fechaPlano.split('-');
+    if (partes.length !== 3) return false;
+    const fecha = new Date(partes[0], partes[1] - 1, partes[2]);
+    if (Number.isNaN(fecha.getTime())) return false;
+    const hoy = new Date();
+    const inicioHoy = new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate());
+    return fecha < inicioHoy;
+  }
+
   function crearEventoNormalizado(origen = {}) {
     return {
       _localId: origen._localId || crypto.randomUUID(),
@@ -195,7 +222,8 @@
       Organizador: String(obtenerPropiedad(origen, 'Organizador') || '').trim(),
       Whatsapp: normalizarWhatsapp(obtenerPropiedad(origen, 'Whatsapp') || ''),
       Imagen: String(obtenerPropiedad(origen, 'Imagen') || '').trim(),
-      Descripcion: String(obtenerPropiedad(origen, 'Descripcion') || '').trim()
+      Descripcion: String(obtenerPropiedad(origen, 'Descripcion') || '').trim(),
+      VisibleEnCalendario: normalizarBoolean(obtenerPropiedad(origen, 'VisibleEnCalendario'), false)
     };
   }
 
@@ -575,6 +603,7 @@
     qs('fWhatsappV2').value = evento.Whatsapp || '';
     qs('fImagenV2').value = evento.Imagen || '';
     qs('fDescripcionV2').value = evento.Descripcion || '';
+    qs('fVisibleEnCalendarioV2').checked = Boolean(evento.VisibleEnCalendario);
     actualizarVistaPreviaImagen();
 
     const btnEliminar = qs('btnEliminarEventoV2');
@@ -604,7 +633,8 @@
       Organizador: qs('fOrganizadorV2').value,
       Whatsapp: qs('fWhatsappV2').value,
       Imagen: qs('fImagenV2').value,
-      Descripcion: qs('fDescripcionV2').value
+      Descripcion: qs('fDescripcionV2').value,
+      VisibleEnCalendario: qs('fVisibleEnCalendarioV2').checked
     });
   }
 
@@ -696,6 +726,200 @@
     generarCheckboxes(eventos, 'Lugar', 'filtro-lugar-container-v2', filtrosLugarSeleccionados);
   }
 
+  function parseCsvConLineas(textoCsv) {
+    const filas = [];
+    let valor = '';
+    let fila = [];
+    let enComillas = false;
+    let linea = 1;
+    let lineaInicialFila = 1;
+
+    function pushFila() {
+      if (fila.length === 1 && String(fila[0] || '').trim() === '') {
+        fila = [];
+        return;
+      }
+      filas.push({ values: fila.slice(), lineNumber: lineaInicialFila });
+      fila = [];
+    }
+
+    for (let i = 0; i < textoCsv.length; i++) {
+      const char = textoCsv[i];
+      const siguiente = textoCsv[i + 1];
+
+      if (char === '"') {
+        if (enComillas && siguiente === '"') {
+          valor += '"';
+          i++;
+        } else {
+          enComillas = !enComillas;
+        }
+        continue;
+      }
+
+      if (!enComillas && (char === ',' || char === ';')) {
+        fila.push(valor);
+        valor = '';
+        continue;
+      }
+
+      if (!enComillas && (char === '\n' || char === '\r')) {
+        if (char === '\r' && siguiente === '\n') {
+          i++;
+        }
+        fila.push(valor);
+        valor = '';
+        pushFila();
+        linea++;
+        lineaInicialFila = linea;
+        continue;
+      }
+
+      valor += char;
+    }
+
+    if (valor !== '' || fila.length > 0) {
+      fila.push(valor);
+      pushFila();
+    }
+
+    return filas;
+  }
+
+  function dedupeKeyEvento(titulo, fechaHora, lugar) {
+    return String(titulo || '').trim().toLowerCase() + '|' +
+      String(fechaHora || '').trim() + '|' +
+      String(lugar || '').trim().toLowerCase();
+  }
+
+  async function importarCsvAdmin() {
+    if (sincronizacionEnCurso) {
+      registrarLog('Sincronización en curso. Espera para importar.', 'warning');
+      return;
+    }
+
+    const inputCsv = qs('inputCsvV2');
+    if (!inputCsv || !inputCsv.files || !inputCsv.files[0]) {
+      registrarLog('No se seleccionó archivo CSV para importar.', 'warning');
+      return;
+    }
+
+    const archivo = inputCsv.files[0];
+    const textoCsv = await archivo.text();
+    const filas = parseCsvConLineas(textoCsv);
+    if (filas.length < 2) {
+      registrarLog('El CSV no contiene filas para importar.', 'warning');
+      return;
+    }
+
+    const encabezados = filas[0].values.map(h => String(h || '').trim());
+    const idx = {};
+    encabezados.forEach((h, i) => { idx[h] = i; });
+
+    const requeridos = ['Titulo', 'Fecha_Hora'];
+    const faltantes = requeridos.filter(campo => !Object.prototype.hasOwnProperty.call(idx, campo));
+    if (faltantes.length > 0) {
+      registrarLog('CSV inválido. Faltan columnas: ' + faltantes.join(', '), 'error');
+      return;
+    }
+
+    const existentes = new Set(eventos.map(ev => dedupeKeyEvento(ev.Titulo, ev.Fecha_Hora, ev.Lugar)));
+    const vistosEnCsv = new Set();
+    const lineasDuplicadas = [];
+    let insertados = 0;
+    let invalidos = 0;
+
+    for (let i = 1; i < filas.length; i++) {
+      const filaInfo = filas[i];
+      const row = filaInfo.values;
+      const get = function(col) {
+        const pos = idx[col];
+        return pos === undefined ? '' : String(row[pos] || '').trim();
+      };
+
+      const titulo = get('Titulo');
+      const fechaHora = get('Fecha_Hora');
+      const lugar = get('Lugar');
+      const key = dedupeKeyEvento(titulo, fechaHora, lugar);
+
+      if (!titulo || !fechaHora) {
+        invalidos++;
+        continue;
+      }
+
+      if (existentes.has(key) || vistosEnCsv.has(key)) {
+        lineasDuplicadas.push(filaInfo.lineNumber);
+        continue;
+      }
+
+      vistosEnCsv.add(key);
+      eventos.push(crearEventoNormalizado({
+        Titulo: titulo,
+        Fecha_Hora: fechaHora,
+        Lugar: lugar,
+        Estado: get('Estado') || 'YUC',
+        Tipos: get('Tipos'),
+        Distancias: get('Distancias'),
+        Link: get('Link'),
+        Imagen: get('Imagen'),
+        Descripcion: get('Descripcion'),
+        Whatsapp: get('Whatsapp'),
+        InscripcionOnLine: get('InscripcionOnLine'),
+        Organizador: get('Organizador'),
+        VisibleEnCalendario: Object.prototype.hasOwnProperty.call(idx, 'VisibleEnCalendario')
+          ? normalizarBoolean(get('VisibleEnCalendario'), false)
+          : false
+      }));
+      insertados++;
+    }
+
+    const sincronizado = await sincronizarEnWordPressAPI();
+    if (!sincronizado) {
+      registrarLog('Importación CSV finalizada sin sincronización completa.', 'warning');
+      return;
+    }
+
+    actualizarContador();
+    generarFiltros();
+    renderCalendario();
+    registrarLog(
+      'Importación CSV completada. Insertados: ' + insertados +
+      ' | Duplicados: ' + lineasDuplicadas.length +
+      ' | Inválidos: ' + invalidos +
+      (lineasDuplicadas.length ? ' | Líneas duplicadas: ' + lineasDuplicadas.join(', ') : ''),
+      lineasDuplicadas.length > 0 || invalidos > 0 ? 'warning' : 'success'
+    );
+  }
+
+  async function eliminarEventosPasados() {
+    if (sincronizacionEnCurso) {
+      registrarLog('Sincronización en curso. Espera para eliminar eventos pasados.', 'warning');
+      return;
+    }
+
+    const totalPasados = eventos.filter(esEventoPasado).length;
+    if (totalPasados === 0) {
+      registrarLog('No hay eventos pasados para eliminar.', 'info');
+      return;
+    }
+
+    if (!confirm('Se eliminarán ' + totalPasados + ' evento(s) pasado(s). ¿Deseas continuar?')) {
+      return;
+    }
+
+    eventos = eventos.filter(ev => !esEventoPasado(ev));
+    const sincronizado = await sincronizarEnWordPressAPI();
+    if (!sincronizado) {
+      registrarLog('Eliminación de pasados finalizada sin sincronización completa.', 'warning');
+      return;
+    }
+
+    actualizarContador();
+    generarFiltros();
+    renderCalendario();
+    registrarLog('Eventos pasados eliminados: ' + totalPasados, 'success');
+  }
+
   async function cargarDesdeWordPressAPI() {
     registrarLog('Solicitando eventos desde WordPress API...', 'info');
 
@@ -764,7 +988,8 @@
       Organizador: ev.Organizador,
       Whatsapp: ev.Whatsapp,
       Imagen: ev.Imagen,
-      Descripcion: ev.Descripcion
+      Descripcion: ev.Descripcion,
+      VisibleEnCalendario: Boolean(ev.VisibleEnCalendario)
     }));
 
     sincronizacionEnCurso = true;
@@ -802,13 +1027,16 @@
 
   function vincularEventosUI() {
     const btnCargar = qs('btnCargarApiV2');
+    const btnImportarCsv = qs('btnImportarCsvV2');
     const btnExportarCsv = qs('btnExportarCsvV2');
+    const btnEliminarPasados = qs('btnEliminarPasadosV2');
     const btnNuevo = qs('btnNuevoEventoV2');
     const btnVerificar = qs('btnVerificarSesionV2');
     const btnLimpiarLog = qs('btnLimpiarLogV2');
     const btnCerrar = qs('btnCerrarModalV2');
     const btnCancelarModal = qs('btnCancelarModalV2');
     const btnEliminar = qs('btnEliminarEventoV2');
+    const inputCsv = qs('inputCsvV2');
     const form = qs('formEventoV2');
     const modal = qs('modal-admin-v2');
 
@@ -818,6 +1046,13 @@
     }
 
     btnCargar.addEventListener('click', cargarDesdeWordPressAPI);
+    if (btnImportarCsv && inputCsv) {
+      btnImportarCsv.addEventListener('click', () => {
+        inputCsv.value = '';
+        inputCsv.click();
+      });
+      inputCsv.addEventListener('change', importarCsvAdmin);
+    }
     if (btnExportarCsv) {
       btnExportarCsv.addEventListener('click', () => {
         if (!apiExportCsvUrl) {
@@ -826,6 +1061,9 @@
         }
         window.location.href = apiExportCsvUrl;
       });
+    }
+    if (btnEliminarPasados) {
+      btnEliminarPasados.addEventListener('click', eliminarEventosPasados);
     }
     btnNuevo.addEventListener('click', () => abrirModalEvento(crearEventoNormalizado({ Estado: 'YUC' }), true));
     btnVerificar.addEventListener('click', () => verificarSesionWordPressAPI(false));

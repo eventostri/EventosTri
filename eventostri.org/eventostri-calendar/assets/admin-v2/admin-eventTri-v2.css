@@ -355,11 +355,22 @@
 .imagen-preview {
   display: none;
   width: 100%;
-  max-height: 220px;
-  object-fit: cover;
+  max-height: 280px;
+  object-fit: contain;
   border-radius: 10px;
   border: 1px solid #c9d7f1;
   background: #f8fbff;
+}
+
+.checkbox-inline {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 700;
+}
+
+.checkbox-inline input[type='checkbox'] {
+  width: auto;
 }
 
 .imagen-preview-empty {

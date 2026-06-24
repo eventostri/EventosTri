@@ -7,6 +7,7 @@
     let datosEventos = [];
     let calendarioInstancia = null;
     let rangoVisibleMes = null;
+    let terminoBusqueda = '';
     const urlJSON = (window.eventostriCalendarioConfig && window.eventostriCalendarioConfig.eventosUrl)
         ? window.eventostriCalendarioConfig.eventosUrl
         : '/wp-json/eventostri/v1/eventos';
@@ -154,6 +155,45 @@
         return diaSemanaFmt + ', ' + diaFmt + ' de ' + mesFmt + ' de ' + anio + ' · ' + horaFmt;
     }
 
+    function normalizarBoolean(valor, fallback) {
+        if (valor === null || valor === undefined || valor === '') {
+            return fallback;
+        }
+        if (typeof valor === 'boolean') {
+            return valor;
+        }
+        if (typeof valor === 'number') {
+            return valor === 1;
+        }
+        const texto = String(valor).trim().toLowerCase();
+        if (texto === '1' || texto === 'true' || texto === 'yes' || texto === 'si' || texto === 'on') return true;
+        if (texto === '0' || texto === 'false' || texto === 'no' || texto === 'off') return false;
+        return fallback;
+    }
+
+    function esVisibleEnCalendario(evento) {
+        return normalizarBoolean(obtenerPropiedad(evento, 'VisibleEnCalendario'), true);
+    }
+
+    function esEventoVigentePublico(evento) {
+        const fechaEvento = detectarFecha(evento);
+        if (!fechaEvento) return false;
+        const soloFecha = String(fechaEvento).split(/[T ]/)[0];
+        const partes = soloFecha.split('-');
+        if (partes.length !== 3) return false;
+        const fecha = new Date(partes[0], partes[1] - 1, partes[2]);
+        if (Number.isNaN(fecha.getTime())) return false;
+        const hoy = new Date();
+        const inicioHoy = new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate());
+        return fecha >= inicioHoy;
+    }
+
+    function obtenerEventosPublicosBase() {
+        return datosEventos.filter(function(evento) {
+            return esVisibleEnCalendario(evento) && esEventoVigentePublico(evento);
+        });
+    }
+
     function crearModalEvento() {
         if (document.getElementById('modal-evento-calendario')) {
             return document.getElementById('modal-evento-calendario');
@@ -172,31 +212,30 @@
             '<div class="evento-modal-content">',
             '<h3 class="evento-modal-title"></h3>',
             '<div class="evento-modal-meta">',
-            '<span class="evento-modal-label">Lugar</span>',
+            '<span class="evento-modal-label">LUGAR</span>',
             '<p class="evento-modal-place"></p>',
             '</div>',
             '<div class="evento-modal-meta">',
-            '<span class="evento-modal-label">Fecha y hora</span>',
+            '<span class="evento-modal-label">FECHA Y HORA</span>',
             '<p class="evento-modal-date"></p>',
             '</div>',
             '<div class="evento-modal-meta">',
-            '<span class="evento-modal-label">Distancias</span>',
+            '<span class="evento-modal-label">DISTANCIAS</span>',
             '<div class="evento-modal-distances"></div>',
             '</div>',
             '<div class="evento-modal-meta evento-modal-link-block">',
-            '<span class="evento-modal-label">Enlace</span>',
+            '<span class="evento-modal-label">ENLACE</span>',
             '<div class="evento-modal-link-wrap"></div>',
             '</div>',
             '<div class="evento-modal-meta evento-modal-inscripcion-block">',
-            '<span class="evento-modal-label">InscripcionesOnLine</span>',
+            '<span class="evento-modal-label">INSCRIPCIONES EN LINEA</span>',
             '<div class="evento-modal-inscripcion-wrap"></div>',
             '</div>',
             '<div class="evento-modal-meta evento-modal-whatsapp-block">',
-            '<span class="evento-modal-label">Whatsapp</span>',
+            '<span class="evento-modal-label">WHATSAPP</span>',
             '<div class="evento-modal-whatsapp-wrap"></div>',
             '</div>',
             '<div class="evento-modal-meta evento-modal-description-block">',
-            '<span class="evento-modal-label">Descripcion</span>',
             '<p class="evento-modal-description"></p>',
             '</div>',
             '</div>',
@@ -230,6 +269,7 @@
         const inscripcionBlock = modal.querySelector('.evento-modal-inscripcion-block');
         const whatsappBlock = modal.querySelector('.evento-modal-whatsapp-block');
         const descripcion = modal.querySelector('.evento-modal-description');
+        const descripcionBlock = modal.querySelector('.evento-modal-description-block');
 
         const datos = evento.extendedProps || {};
         const url = (datos.link || '').trim();
@@ -237,7 +277,9 @@
         const whatsappTexto = (datos.whatsapp || '').trim();
         const imagenUrl = (datos.imagen || '').trim();
         const tituloTexto = datos.titulo || evento.title || 'Evento deportivo';
-        const lugarTexto = datos.lugar || 'Sin lugar especificado';
+        const lugarBase = (datos.lugar || '').trim();
+        const estadoBase = (datos.estado || '').trim();
+        const lugarTexto = estadoBase ? (lugarBase + ', ' + estadoBase) : (lugarBase || 'Sin lugar especificado');
         const fechaTexto = datos.fechaFormateada || formatearFecha(evento.start || datos.fecha_hora);
         const distanciasTexto = datos.distancias || '';
         const descripcionTexto = datos.descripcion || '';
@@ -245,7 +287,8 @@
         titulo.textContent = tituloTexto;
         lugar.textContent = lugarTexto;
         fecha.textContent = fechaTexto;
-        descripcion.textContent = descripcionTexto || 'No hay descripcion disponible.';
+        descripcion.textContent = descripcionTexto || '';
+        descripcionBlock.style.display = descripcionTexto ? '' : 'none';
 
         if (imagenUrl) {
             imagen.src = imagenUrl;
@@ -304,10 +347,8 @@
             enlaceInscripcion.rel = 'noopener noreferrer';
             enlaceInscripcion.textContent = inscripcionUrl;
             inscripcionWrap.appendChild(enlaceInscripcion);
-            if (inscripcionBlock) {
-                inscripcionBlock.style.display = '';
-            }
-        } else if (inscripcionBlock) {
+            inscripcionBlock.style.display = '';
+        } else {
             inscripcionBlock.style.display = 'none';
         }
 
@@ -333,11 +374,8 @@
                 enlaceWhatsapp.rel = 'noopener noreferrer';
                 whatsappWrap.appendChild(enlaceWhatsapp);
             });
-
-            if (whatsappBlock) {
-                whatsappBlock.style.display = '';
-            }
-        } else if (whatsappBlock) {
+            whatsappBlock.style.display = '';
+        } else {
             whatsappBlock.style.display = 'none';
         }
 
@@ -348,6 +386,8 @@
         const contenedorTipo = document.getElementById('filtro-tipo-container');
         const contenedorLugar = document.getElementById('filtro-lugar-container');
         const contenedorCalendario = document.getElementById('calendario');
+        const searchInput = document.getElementById('evento-search-input');
+        const clearSearchBtn = document.getElementById('clear-search-btn');
 
         if (!contenedorTipo || !contenedorLugar || !contenedorCalendario) {
             return false;
@@ -359,36 +399,50 @@
 
         contenedorCalendario.dataset.fcInicializado = 'true';
 
-        let wrapper = document.querySelector('.wrapper-eventos');
-        if (!wrapper) {
-            wrapper = document.createElement('div');
-            wrapper.className = 'wrapper-eventos';
-            if (contenedorCalendario.parentNode) {
-                contenedorCalendario.parentNode.insertBefore(wrapper, contenedorCalendario);
-            }
+        const basePublica = obtenerEventosPublicosBase();
+        generarCheckboxes(basePublica, 'tipos', 'filtro-tipo-container');
+        generarCheckboxes(basePublica, 'lugar', 'filtro-lugar-container');
+        if (searchInput && clearSearchBtn) {
+            inicializarBuscadorEventos(searchInput, clearSearchBtn);
         }
-
-        if (wrapper !== contenedorCalendario.parentNode) {
-            wrapper.appendChild(contenedorCalendario);
-        }
-
-        const contenedorFiltros = document.querySelector('.filtros-container');
-        if (contenedorFiltros && !wrapper.contains(contenedorFiltros)) {
-            wrapper.appendChild(contenedorFiltros);
-        }
-
-        if (wrapper.firstChild !== contenedorCalendario) {
-            wrapper.insertBefore(contenedorCalendario, wrapper.firstChild);
-        }
-
-        if (contenedorFiltros && wrapper.lastChild !== contenedorFiltros) {
-            wrapper.appendChild(contenedorFiltros);
-        }
-
-        generarCheckboxes(datosEventos, 'tipos', 'filtro-tipo-container');
-        generarCheckboxes(datosEventos, 'lugar', 'filtro-lugar-container');
-        inicializarGridMensual(datosEventos);
+        actualizarCalendarioDinamico(obtenerEventosFiltradosActuales());
         return true;
+    }
+
+    function inicializarBuscadorEventos(searchInput, clearSearchBtn) {
+        let searchTimeout;
+
+        function actualizarUIBuscador() {
+            clearSearchBtn.style.display = terminoBusqueda ? 'inline-flex' : 'none';
+        }
+
+        searchInput.addEventListener('input', function(e) {
+            clearTimeout(searchTimeout);
+            searchTimeout = setTimeout(function() {
+                terminoBusqueda = String(e.target.value || '').trim().toLowerCase();
+                actualizarUIBuscador();
+                actualizarCalendarioDinamico(obtenerEventosFiltradosActuales());
+            }, 300);
+        });
+
+        searchInput.addEventListener('keydown', function(e) {
+            if (e.key === 'Escape') {
+                searchInput.value = '';
+                terminoBusqueda = '';
+                actualizarUIBuscador();
+                actualizarCalendarioDinamico(obtenerEventosFiltradosActuales());
+            }
+        });
+
+        clearSearchBtn.addEventListener('click', function() {
+            searchInput.value = '';
+            terminoBusqueda = '';
+            actualizarUIBuscador();
+            searchInput.focus();
+            actualizarCalendarioDinamico(obtenerEventosFiltradosActuales());
+        });
+
+        actualizarUIBuscador();
     }
 
     function generarCheckboxes(eventos, propiedad, contenedorId) {
@@ -410,7 +464,6 @@
         });
 
         let opcionesOrdenadas = Object.keys(conteoValores);
-
         if (propiedad === 'lugar') {
             opcionesOrdenadas = ordenarOpcionesLugar(opcionesOrdenadas, conteoValores);
         } else {
@@ -422,32 +475,9 @@
             const label = document.createElement('label');
             label.className = 'checkbox-label';
             label.innerHTML = '<div><input type="checkbox" value="' + opcion + '" style="margin-right:8px;"><span>' + opcion + '</span></div>';
-
             label.querySelector('input').addEventListener('change', function() {
-                const tiposCheck = Array.from(document.querySelectorAll('#filtro-tipo-container input:checked')).map(function(input) {
-                    return input.value;
-                });
-                const lugaresCheck = Array.from(document.querySelectorAll('#filtro-lugar-container input:checked')).map(function(input) {
-                    return input.value;
-                });
-
-                const filtrados = datosEventos.filter(function(evento) {
-                    const eventoTipos = obtenerTiposArray(evento);
-                    const eventoLugar = obtenerPropiedad(evento, 'lugar');
-                    const coincideTipo = tiposCheck.length === 0 || tiposCheck.some(function(tipoFiltro) {
-                        return eventoTipos.some(function(tipoEvento) {
-                            return tipoEvento.toLowerCase() === tipoFiltro.toLowerCase();
-                        });
-                    });
-                    const coincideLugar = lugaresCheck.length === 0 || lugaresCheck.some(function(lugarFiltro) {
-                        return String(eventoLugar).toLowerCase() === lugarFiltro.toLowerCase();
-                    });
-                    return coincideTipo && coincideLugar;
-                });
-
-                actualizarCalendarioDinamico(filtrados);
+                actualizarCalendarioDinamico(obtenerEventosFiltradosActuales());
             });
-
             contenedor.appendChild(label);
         });
     }
@@ -458,15 +488,11 @@
 
         eventosFiltrados.forEach(function(evento) {
             const fechaEvento = detectarFecha(evento);
-            if (!fechaEvento) {
-                return;
-            }
+            if (!fechaEvento) return;
 
             const fechaPlana = String(fechaEvento).split(/[T ]/)[0];
             const partes = fechaPlana.split('-');
-            if (partes.length !== 3) {
-                return;
-            }
+            if (partes.length !== 3) return;
 
             const fecha = new Date(partes[0], partes[1] - 1, partes[2]);
             if (!Number.isNaN(fecha.getTime())) {
@@ -560,17 +586,13 @@
                 const colores = obtenerColorPorTipos(info.event.extendedProps && info.event.extendedProps.tipos ? info.event.extendedProps.tipos : []);
                 const el = info.el;
                 if (!el) return;
-
                 el.style.backgroundColor = colores.backgroundColor;
                 el.style.borderColor = colores.borderColor;
                 el.style.color = colores.textColor;
                 el.style.opacity = '1';
                 el.style.boxShadow = 'inset 0 0 0 1px rgba(255,255,255,0.12)';
-
                 const title = el.querySelector('.fc-event-title');
-                if (title) {
-                    title.style.color = colores.textColor;
-                }
+                if (title) title.style.color = colores.textColor;
             },
             eventClick: function(info) {
                 info.jsEvent.preventDefault();
@@ -598,9 +620,11 @@
             return input.value;
         });
 
-        return datosEventos.filter(function(evento) {
+        return obtenerEventosPublicosBase().filter(function(evento) {
             const eventoTipos = obtenerTiposArray(evento);
             const eventoLugar = obtenerPropiedad(evento, 'lugar');
+            const titulo = detectarTitulo(evento).toLowerCase();
+
             const coincideTipo = tiposCheck.length === 0 || tiposCheck.some(function(tipoFiltro) {
                 return eventoTipos.some(function(tipoEvento) {
                     return tipoEvento.toLowerCase() === tipoFiltro.toLowerCase();
@@ -609,7 +633,9 @@
             const coincideLugar = lugaresCheck.length === 0 || lugaresCheck.some(function(lugarFiltro) {
                 return String(eventoLugar).toLowerCase() === lugarFiltro.toLowerCase();
             });
-            return coincideTipo && coincideLugar;
+            const coincideBusqueda = terminoBusqueda === '' || titulo.includes(terminoBusqueda);
+
+            return coincideTipo && coincideLugar && coincideBusqueda;
         });
     }
 
@@ -619,6 +645,7 @@
             const fecha = detectarFecha(evento);
             const link = obtenerPropiedad(evento, 'link');
             const lugar = obtenerPropiedad(evento, 'lugar');
+            const estado = obtenerPropiedad(evento, 'estado');
             const distancias = obtenerPropiedad(evento, 'distancias');
             const imagen = obtenerPropiedad(evento, 'imagen');
             const descripcion = obtenerPropiedad(evento, 'descripcion');
@@ -639,6 +666,7 @@
                 extendedProps: {
                     titulo: titulo,
                     lugar: lugar,
+                    estado: estado,
                     distancias: distancias,
                     imagen: imagen,
                     descripcion: descripcion,
@@ -657,7 +685,10 @@
     }
 
     function actualizarCalendarioDinamico(eventosFiltrados) {
-        if (!calendarioInstancia) return;
+        if (!calendarioInstancia) {
+            inicializarGridMensual(eventosFiltrados);
+            return;
+        }
 
         aplicarDiasOcultosPorMes(eventosFiltrados);
         calendarioInstancia.removeAllEvents();

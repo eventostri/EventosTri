@@ -5,16 +5,19 @@
       <p>Calendario modificable</p>
     </div>
     <div class="admin-v2-actions">
-      <button type="button" id="btnVerificarSesionV2" class="btn-secondary">Verificar sesion</button>
+      <button type="button" id="btnVerificarSesionV2" class="btn-secondary">Verificar sesión</button>
       <button type="button" id="btnCargarApiV2" class="btn-load">Cargar desde WordPress</button>
+      <button type="button" id="btnImportarCsvV2" class="btn-secondary">Importar CSV</button>
       <button type="button" id="btnExportarCsvV2" class="btn-secondary">Exportar CSV</button>
+      <button type="button" id="btnEliminarPasadosV2" class="btn-secondary">Eliminar pasados</button>
       <button type="button" id="btnNuevoEventoV2" class="btn-block">Nuevo evento</button>
+      <input type="file" id="inputCsvV2" accept=".csv,text/csv" style="display:none;">
     </div>
   </section>
 
   <section class="admin-v2-status">
     <span id="wpAuthFlagV2" class="auth-pill state-pending">Sin verificar</span>
-    <span id="wpAuthDetailsV2" class="auth-details">Comprobando autenticacion y permisos...</span>
+    <span id="wpAuthDetailsV2" class="auth-details">Comprobando autenticación y permisos...</span>
     <span id="contadorEventosV2" class="contador-eventos">0 eventos</span>
   </section>
 
@@ -52,8 +55,8 @@
 
       <form id="formEventoV2">
         <div class="form-group">
-          <label for="fTituloV2">Titulo del Evento *</label>
-          <input type="text" id="fTituloV2" required placeholder="Ej. Maraton MTB Desierto">
+          <label for="fTituloV2">Título del evento *</label>
+          <input type="text" id="fTituloV2" required placeholder="Ej. Maratón MTB Desierto">
         </div>
 
         <div class="form-row">
@@ -62,18 +65,18 @@
             <input type="datetime-local" id="fFechaV2" required>
           </div>
           <div class="form-group">
-            <label for="fEstadoV2">Estado (YUC / CAM / QROO)</label>
-            <select id="fEstadoV2">
-              <option value="YUC">YUC</option>
-              <option value="CAM">CAM</option>
-              <option value="QROO">QROO</option>
-            </select>
+            <label for="fLugarV2">Lugar / Ubicación</label>
+            <input type="text" id="fLugarV2" placeholder="Ej. Mérida">
           </div>
         </div>
 
         <div class="form-group">
-          <label for="fLugarV2">Lugar / Ubicaci&#243;n</label>
-          <input type="text" id="fLugarV2" placeholder="Ej. Merida, Yucatan">
+          <label for="fEstadoV2">Estado (YUC / CAM / QROO)</label>
+          <select id="fEstadoV2">
+            <option value="YUC">YUC</option>
+            <option value="CAM">CAM</option>
+            <option value="QROO">QROO</option>
+          </select>
         </div>
 
         <div class="form-row">
@@ -89,24 +92,31 @@
 
         <div class="form-row">
           <div class="form-group">
-            <label for="fLinkV2">Enlace de Informacion (URL)</label>
+            <label for="fLinkV2">Enlace de información (URL)</label>
             <input type="url" id="fLinkV2" placeholder="https://...">
           </div>
         </div>
 
         <div class="form-group">
-          <label for="fInscripcionOnLineV2">InscripcionesOnLine (URL)</label>
+          <label for="fInscripcionOnLineV2">Inscripciones en línea (URL)</label>
           <input type="url" id="fInscripcionOnLineV2" placeholder="https://...">
         </div>
 
         <div class="form-group">
-          <label for="fWhatsappV2">Whatsapp (multiples telefonos)</label>
+          <label for="fWhatsappV2">WhatsApp (múltiples teléfonos)</label>
           <textarea id="fWhatsappV2" rows="2" placeholder="529991234567, 529991112223"></textarea>
         </div>
 
         <div class="form-group">
-          <label for="fDescripcionV2">Descripcion</label>
+          <label for="fDescripcionV2">Descripción</label>
           <textarea id="fDescripcionV2" rows="4" placeholder="Detalles del evento..."></textarea>
+        </div>
+
+        <div class="form-group">
+          <label class="checkbox-inline">
+            <input type="checkbox" id="fVisibleEnCalendarioV2">
+            Mostrar en calendario público
+          </label>
         </div>
 
         <div class="form-row">
