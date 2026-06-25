@@ -181,6 +181,12 @@ body {
     background-color: #6c757d;
 }
 
+.search-modal-trigger {
+    white-space: nowrap;
+    font-size: 0.85rem;
+    padding: 0.45rem 0.75rem;
+}
+
 .sr-only {
     position: absolute;
     width: 1px;
@@ -321,6 +327,139 @@ body {
 
 .checkbox-label:hover {
     background: #f5f8ff;
+}
+
+.evento-busqueda-highlight {
+    animation: eventoBusquedaResaltar 1.8s ease;
+}
+
+@keyframes eventoBusquedaResaltar {
+    0% {
+        transform: scale(1);
+        box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.65);
+    }
+    45% {
+        transform: scale(1.02);
+        box-shadow: 0 0 0 6px rgba(59, 130, 246, 0);
+    }
+    100% {
+        transform: scale(1);
+        box-shadow: 0 0 0 0 rgba(59, 130, 246, 0);
+    }
+}
+
+.evento-search-modal-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 10000;
+    background: rgba(15, 23, 42, 0.68);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    padding: 1rem;
+}
+
+.evento-search-modal-overlay.is-open {
+    display: flex;
+}
+
+.evento-search-modal-card {
+    box-sizing: border-box;
+    width: min(760px, 100%);
+    max-height: 88vh;
+    background: #fff;
+    border-radius: 14px;
+    border: 1px solid #e2e8f0;
+    box-shadow: 0 16px 50px rgba(15, 23, 42, 0.35);
+    padding: 1rem 1rem 0.85rem;
+    display: grid;
+    grid-template-rows: auto auto auto auto minmax(0, 1fr);
+    gap: 0.6rem;
+}
+
+.evento-search-modal-close {
+    justify-self: end;
+    width: 2rem;
+    height: 2rem;
+    padding: 0;
+    line-height: 1;
+    border-radius: 999px;
+    border: 1px solid #cbd5e1;
+    background: #fff;
+    color: #0f172a;
+}
+
+.evento-search-modal-title {
+    margin: -1.8rem 0 0;
+    font-size: 1.18rem;
+    color: var(--primary-color);
+}
+
+.evento-search-modal-shortcut {
+    margin: 0;
+    color: #64748b;
+    font-size: 0.84rem;
+}
+
+.evento-search-modal-input {
+    box-sizing: border-box;
+    width: 100%;
+    padding: 0.62rem 0.78rem;
+    border: 1px solid #cbd5e1;
+    border-radius: 8px;
+    font-size: 0.95rem;
+}
+
+.evento-search-modal-input:focus {
+    outline: none;
+    border-color: #3b82f6;
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15);
+}
+
+.evento-search-modal-status {
+    min-height: 1.2rem;
+    color: #334155;
+    font-size: 0.86rem;
+}
+
+.evento-search-modal-results {
+    margin: 0;
+    padding: 0 0.1rem 0.15rem 0;
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 0.45rem;
+    overflow: auto;
+}
+
+.evento-search-result-option {
+    width: 100%;
+    text-align: left;
+    border: 1px solid #e2e8f0;
+    border-radius: 10px;
+    background: #fff;
+    padding: 0.62rem 0.75rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+    color: #0f172a;
+}
+
+.evento-search-result-option:hover,
+.evento-search-result-option.is-active {
+    border-color: #93c5fd;
+    background: #eff6ff;
+}
+
+.evento-search-result-title {
+    font-weight: 700;
+    font-size: 0.94rem;
+}
+
+.evento-search-result-meta,
+.evento-search-result-type {
+    font-size: 0.8rem;
+    color: #334155;
 }
 
 .evento-modal-overlay {
@@ -671,10 +810,17 @@ body {
 
     .search-container {
         padding: 10px 12px;
+        flex-wrap: wrap;
     }
 
     .search-container input {
         min-width: 0;
+        width: 100%;
+    }
+
+    .search-modal-trigger {
+        width: 100%;
+        justify-content: center;
     }
 
     #calendario .fc-header-toolbar,
@@ -758,6 +904,10 @@ body {
     .wrapper-eventos #calendario .fc .fc-daygrid-event .fc-event-main {
         padding: 0 2px !important;
         line-height: 1.05 !important;
+    }
+
+    .evento-search-modal-card {
+        max-height: 92vh;
     }
 
     #calendario .fc .fc-daygrid-event .fc-event-main-frame,

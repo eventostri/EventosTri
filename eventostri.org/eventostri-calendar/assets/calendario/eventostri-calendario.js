@@ -8,6 +8,12 @@
     let calendarioInstancia = null;
     let rangoVisibleMes = null;
     let terminoBusqueda = '';
+    let terminoBusquedaModal = '';
+    let indiceActivoBusquedaModal = -1;
+    let resultadosBusquedaModal = [];
+    let ultimoTerminoAnaliticaModal = '';
+    let ultimoElementoConFoco = null;
+    const CLAVE_ANALITICA_BUSQUEDA = '__eventostriSearchAnalytics';
     const urlJSON = (window.eventostriCalendarioConfig && window.eventostriCalendarioConfig.eventosUrl)
         ? window.eventostriCalendarioConfig.eventosUrl
         : '/wp-json/eventostri/v1/eventos';
@@ -153,6 +159,55 @@
         const horaFmt = hora.replace(/\s/g, '').replace(/\./g, '').replace(/(?<=\d)(AM|PM)/i, ' $1');
 
         return diaSemanaFmt + ', ' + diaFmt + ' de ' + mesFmt + ' de ' + anio + ' · ' + horaFmt;
+    }
+
+    function normalizarTextoBusqueda(valor) {
+        const base = String(valor || '').toLowerCase().trim();
+        if (typeof base.normalize === 'function') {
+            return base.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+        }
+        return base;
+    }
+
+    function escaparParaSelector(valor) {
+        return String(valor || '')
+            .replace(/\\/g, '\\\\')
+            .replace(/"/g, '\\"');
+    }
+
+    function construirClaveEventoDesdeDatos(titulo, fecha, lugar) {
+        const fechaTexto = String(fecha || '').split(/[T ]/)[0];
+        return normalizarTextoBusqueda(titulo) + '|' + fechaTexto + '|' + normalizarTextoBusqueda(lugar);
+    }
+
+    function construirClaveEvento(evento) {
+        return construirClaveEventoDesdeDatos(
+            detectarTitulo(evento),
+            detectarFecha(evento),
+            obtenerPropiedad(evento, 'lugar')
+        );
+    }
+
+    function registrarAnaliticaBusqueda(tipo, payload) {
+        const evento = Object.assign({
+            tipo: tipo,
+            timestamp: new Date().toISOString()
+        }, payload || {});
+
+        if (!Array.isArray(window[CLAVE_ANALITICA_BUSQUEDA])) {
+            window[CLAVE_ANALITICA_BUSQUEDA] = [];
+        }
+        window[CLAVE_ANALITICA_BUSQUEDA].push(evento);
+
+        if (Array.isArray(window.dataLayer)) {
+            window.dataLayer.push(Object.assign({
+                event: 'eventostri_search_' + tipo
+            }, payload || {}));
+        }
+
+        if (typeof window.dispatchEvent === 'function' && typeof window.CustomEvent === 'function') {
+            window.dispatchEvent(new CustomEvent('eventostri:search-analytics', { detail: evento }));
+        }
     }
 
     function normalizarBoolean(valor, fallback) {
@@ -382,12 +437,318 @@
         modal.classList.add('is-open');
     }
 
+    function crearModalBusquedaEventos() {
+        if (document.getElementById('evento-search-modal')) {
+            return document.getElementById('evento-search-modal');
+        }
+
+        const overlay = document.createElement('div');
+        overlay.id = 'evento-search-modal';
+        overlay.className = 'evento-search-modal-overlay';
+        overlay.innerHTML = [
+            '<div class="evento-search-modal-card" role="dialog" aria-modal="true" aria-labelledby="evento-search-modal-title">',
+            '<button type="button" class="evento-search-modal-close" aria-label="Cerrar busqueda">×</button>',
+            '<h3 id="evento-search-modal-title" class="evento-search-modal-title">Busqueda avanzada</h3>',
+            '<p class="evento-search-modal-shortcut">Atajo: Ctrl+K / Cmd+K</p>',
+            '<input type="text" id="evento-search-modal-input" class="evento-search-modal-input" autocomplete="off" placeholder="Buscar por nombre de evento..." aria-label="Buscar por nombre de evento">',
+            '<div id="evento-search-modal-status" class="evento-search-modal-status" aria-live="polite"></div>',
+            '<ul id="evento-search-modal-results" class="evento-search-modal-results" role="listbox" aria-label="Resultados de busqueda"></ul>',
+            '</div>'
+        ].join('');
+
+        overlay.addEventListener('click', function(e) {
+            if (e.target === overlay) {
+                cerrarModalBusquedaEventos();
+            }
+        });
+
+        document.body.appendChild(overlay);
+        return overlay;
+    }
+
+    function obtenerElementosModalBusqueda() {
+        const modal = crearModalBusquedaEventos();
+        return {
+            modal: modal,
+            close: modal.querySelector('.evento-search-modal-close'),
+            input: modal.querySelector('#evento-search-modal-input'),
+            status: modal.querySelector('#evento-search-modal-status'),
+            results: modal.querySelector('#evento-search-modal-results')
+        };
+    }
+
+    function resaltarEventoCalendario(evento) {
+        if (!evento || !evento.id) return;
+
+        const selector = '#calendario .fc-event[data-event-id="' + escaparParaSelector(evento.id) + '"]';
+        const elementos = document.querySelectorAll(selector);
+        elementos.forEach(function(elemento) {
+            elemento.classList.add('evento-busqueda-highlight');
+            setTimeout(function() {
+                elemento.classList.remove('evento-busqueda-highlight');
+            }, 1800);
+        });
+    }
+
+    function enfocarEventoEnCalendario(eventoDatos) {
+        if (!calendarioInstancia) return;
+
+        const fecha = detectarFecha(eventoDatos);
+        if (fecha) {
+            calendarioInstancia.gotoDate(fecha);
+        }
+
+        const claveObjetivo = construirClaveEvento(eventoDatos);
+        setTimeout(function() {
+            if (!calendarioInstancia) return;
+            const eventoCalendario = calendarioInstancia.getEvents().find(function(evento) {
+                const claveExistente = (evento.extendedProps && evento.extendedProps.busquedaClave) || construirClaveEventoDesdeDatos(
+                    evento.extendedProps && evento.extendedProps.titulo ? evento.extendedProps.titulo : evento.title,
+                    evento.extendedProps && evento.extendedProps.fecha_hora ? evento.extendedProps.fecha_hora : evento.startStr,
+                    evento.extendedProps && evento.extendedProps.lugar ? evento.extendedProps.lugar : ''
+                );
+                return claveExistente === claveObjetivo;
+            });
+            if (!eventoCalendario) return;
+            resaltarEventoCalendario(eventoCalendario);
+            mostrarDetalleEvento(eventoCalendario);
+        }, 180);
+    }
+
+    function obtenerEventosFiltradosPorChecks() {
+        const tiposCheck = Array.from(document.querySelectorAll('#filtro-tipo-container input:checked')).map(function(input) {
+            return input.value;
+        });
+        const lugaresCheck = Array.from(document.querySelectorAll('#filtro-lugar-container input:checked')).map(function(input) {
+            return input.value;
+        });
+
+        return obtenerEventosPublicosBase().filter(function(evento) {
+            const eventoTipos = obtenerTiposArray(evento);
+            const eventoLugar = obtenerPropiedad(evento, 'lugar');
+
+            const coincideTipo = tiposCheck.length === 0 || tiposCheck.some(function(tipoFiltro) {
+                return eventoTipos.some(function(tipoEvento) {
+                    return tipoEvento.toLowerCase() === tipoFiltro.toLowerCase();
+                });
+            });
+            const coincideLugar = lugaresCheck.length === 0 || lugaresCheck.some(function(lugarFiltro) {
+                return String(eventoLugar).toLowerCase() === lugarFiltro.toLowerCase();
+            });
+
+            return coincideTipo && coincideLugar;
+        });
+    }
+
+    function obtenerResultadosBusquedaModal(termino) {
+        const terminoNormalizado = normalizarTextoBusqueda(termino);
+        if (!terminoNormalizado) {
+            return [];
+        }
+
+        return obtenerEventosFiltradosPorChecks()
+            .filter(function(evento) {
+                return normalizarTextoBusqueda(detectarTitulo(evento)).includes(terminoNormalizado);
+            })
+            .slice(0, 30);
+    }
+
+    function actualizarIndiceActivoBusquedaModal(indiceNuevo) {
+        const elementos = obtenerElementosModalBusqueda();
+        const opciones = Array.from(elementos.results.querySelectorAll('.evento-search-result-option'));
+        if (opciones.length === 0) {
+            indiceActivoBusquedaModal = -1;
+            elementos.input.removeAttribute('aria-activedescendant');
+            return;
+        }
+
+        const indiceNormalizado = Math.max(0, Math.min(indiceNuevo, opciones.length - 1));
+        indiceActivoBusquedaModal = indiceNormalizado;
+        opciones.forEach(function(opcion, indice) {
+            const activo = indice === indiceActivoBusquedaModal;
+            opcion.classList.toggle('is-active', activo);
+            opcion.setAttribute('aria-selected', activo ? 'true' : 'false');
+            if (activo) {
+                elementos.input.setAttribute('aria-activedescendant', opcion.id);
+                opcion.scrollIntoView({ block: 'nearest' });
+            }
+        });
+    }
+
+    function seleccionarResultadoBusquedaModal(indice) {
+        const evento = resultadosBusquedaModal[indice];
+        if (!evento) return;
+
+        registrarAnaliticaBusqueda('result_click', {
+            term: terminoBusquedaModal,
+            result_position: indice + 1,
+            event_title: detectarTitulo(evento)
+        });
+
+        const inputPublico = document.getElementById('evento-search-input');
+        const tituloSeleccionado = detectarTitulo(evento);
+        if (inputPublico) {
+            inputPublico.value = tituloSeleccionado;
+        }
+        terminoBusqueda = tituloSeleccionado.toLowerCase();
+        actualizarCalendarioDinamico(obtenerEventosFiltradosActuales());
+        cerrarModalBusquedaEventos();
+        enfocarEventoEnCalendario(evento);
+    }
+
+    function renderizarResultadosBusquedaModal() {
+        const elementos = obtenerElementosModalBusqueda();
+        const terminoVisible = terminoBusquedaModal.trim();
+        elementos.results.innerHTML = '';
+
+        if (!terminoVisible) {
+            elementos.status.textContent = 'Escribe para buscar eventos por nombre.';
+            indiceActivoBusquedaModal = -1;
+            return;
+        }
+
+        resultadosBusquedaModal = obtenerResultadosBusquedaModal(terminoVisible);
+        elementos.status.textContent = resultadosBusquedaModal.length
+            ? resultadosBusquedaModal.length + ' resultado(s) encontrados'
+            : 'No hay resultados para "' + terminoVisible + '".';
+
+        if (terminoVisible !== ultimoTerminoAnaliticaModal) {
+            registrarAnaliticaBusqueda('search_term', {
+                term: terminoVisible,
+                results: resultadosBusquedaModal.length
+            });
+            ultimoTerminoAnaliticaModal = terminoVisible;
+        }
+
+        resultadosBusquedaModal.forEach(function(evento, indice) {
+            const titulo = detectarTitulo(evento);
+            const fecha = formatearFecha(detectarFecha(evento));
+            const lugar = obtenerPropiedad(evento, 'lugar') || 'Sin lugar';
+            const tipos = obtenerTiposArray(evento).join(' · ') || 'Sin tipo';
+
+            const li = document.createElement('li');
+            li.className = 'evento-search-result-item';
+
+            const boton = document.createElement('button');
+            boton.type = 'button';
+            boton.className = 'evento-search-result-option';
+            boton.id = 'evento-search-option-' + indice;
+            boton.setAttribute('role', 'option');
+            boton.setAttribute('aria-selected', 'false');
+            boton.innerHTML = [
+                '<span class="evento-search-result-title"></span>',
+                '<span class="evento-search-result-meta"></span>',
+                '<span class="evento-search-result-type"></span>'
+            ].join('');
+            boton.querySelector('.evento-search-result-title').textContent = titulo;
+            boton.querySelector('.evento-search-result-meta').textContent = (fecha || 'Fecha pendiente') + ' · ' + lugar;
+            boton.querySelector('.evento-search-result-type').textContent = tipos;
+            boton.addEventListener('mouseenter', function() {
+                actualizarIndiceActivoBusquedaModal(indice);
+            });
+            boton.addEventListener('click', function() {
+                seleccionarResultadoBusquedaModal(indice);
+            });
+
+            li.appendChild(boton);
+            elementos.results.appendChild(li);
+        });
+
+        actualizarIndiceActivoBusquedaModal(0);
+    }
+
+    function abrirModalBusquedaEventos(valorInicial) {
+        const elementos = obtenerElementosModalBusqueda();
+        ultimoElementoConFoco = document.activeElement;
+        elementos.modal.classList.add('is-open');
+        terminoBusquedaModal = String(valorInicial || '').trim();
+        elementos.input.value = terminoBusquedaModal;
+        renderizarResultadosBusquedaModal();
+        setTimeout(function() {
+            elementos.input.focus();
+            elementos.input.select();
+        }, 0);
+    }
+
+    function cerrarModalBusquedaEventos() {
+        const elementos = obtenerElementosModalBusqueda();
+        elementos.modal.classList.remove('is-open');
+        indiceActivoBusquedaModal = -1;
+        resultadosBusquedaModal = [];
+        terminoBusquedaModal = '';
+        elementos.input.value = '';
+        elementos.input.removeAttribute('aria-activedescendant');
+        elementos.results.innerHTML = '';
+        elementos.status.textContent = '';
+        if (ultimoElementoConFoco && typeof ultimoElementoConFoco.focus === 'function') {
+            ultimoElementoConFoco.focus();
+        }
+    }
+
+    function inicializarBusquedaModalEventos(searchModalTrigger, searchInput) {
+        const elementos = obtenerElementosModalBusqueda();
+        let timeoutBusquedaModal;
+
+        elementos.close.addEventListener('click', function() {
+            cerrarModalBusquedaEventos();
+        });
+
+        elementos.input.addEventListener('input', function(e) {
+            clearTimeout(timeoutBusquedaModal);
+            timeoutBusquedaModal = setTimeout(function() {
+                terminoBusquedaModal = String(e.target.value || '').trim();
+                renderizarResultadosBusquedaModal();
+            }, 180);
+        });
+
+        elementos.input.addEventListener('keydown', function(e) {
+            if (e.key === 'ArrowDown') {
+                e.preventDefault();
+                actualizarIndiceActivoBusquedaModal(indiceActivoBusquedaModal + 1);
+                return;
+            }
+            if (e.key === 'ArrowUp') {
+                e.preventDefault();
+                actualizarIndiceActivoBusquedaModal(indiceActivoBusquedaModal - 1);
+                return;
+            }
+            if (e.key === 'Enter') {
+                if (indiceActivoBusquedaModal >= 0) {
+                    e.preventDefault();
+                    seleccionarResultadoBusquedaModal(indiceActivoBusquedaModal);
+                }
+                return;
+            }
+            if (e.key === 'Escape') {
+                e.preventDefault();
+                cerrarModalBusquedaEventos();
+            }
+        });
+
+        searchModalTrigger.addEventListener('click', function() {
+            abrirModalBusquedaEventos(searchInput ? searchInput.value : '');
+        });
+
+        document.addEventListener('keydown', function(e) {
+            const tecla = String(e.key || '').toLowerCase();
+            const atajoBusqueda = (e.ctrlKey || e.metaKey) && tecla === 'k';
+            if (atajoBusqueda) {
+                e.preventDefault();
+                abrirModalBusquedaEventos(searchInput ? searchInput.value : '');
+            } else if (tecla === 'escape' && elementos.modal.classList.contains('is-open')) {
+                e.preventDefault();
+                cerrarModalBusquedaEventos();
+            }
+        });
+    }
+
     function ejecutarInicializacion() {
         const contenedorTipo = document.getElementById('filtro-tipo-container');
         const contenedorLugar = document.getElementById('filtro-lugar-container');
         const contenedorCalendario = document.getElementById('calendario');
         const searchInput = document.getElementById('evento-search-input');
         const clearSearchBtn = document.getElementById('clear-search-btn');
+        const searchModalTrigger = document.getElementById('search-modal-trigger');
 
         if (!contenedorTipo || !contenedorLugar || !contenedorCalendario) {
             return false;
@@ -404,6 +765,9 @@
         generarCheckboxes(basePublica, 'lugar', 'filtro-lugar-container');
         if (searchInput && clearSearchBtn) {
             inicializarBuscadorEventos(searchInput, clearSearchBtn);
+        }
+        if (searchModalTrigger) {
+            inicializarBusquedaModalEventos(searchModalTrigger, searchInput);
         }
         actualizarCalendarioDinamico(obtenerEventosFiltradosActuales());
         return true;
@@ -613,34 +977,15 @@
     }
 
     function obtenerEventosFiltradosActuales() {
-        const tiposCheck = Array.from(document.querySelectorAll('#filtro-tipo-container input:checked')).map(function(input) {
-            return input.value;
-        });
-        const lugaresCheck = Array.from(document.querySelectorAll('#filtro-lugar-container input:checked')).map(function(input) {
-            return input.value;
-        });
-
-        return obtenerEventosPublicosBase().filter(function(evento) {
-            const eventoTipos = obtenerTiposArray(evento);
-            const eventoLugar = obtenerPropiedad(evento, 'lugar');
+        return obtenerEventosFiltradosPorChecks().filter(function(evento) {
             const titulo = detectarTitulo(evento).toLowerCase();
-
-            const coincideTipo = tiposCheck.length === 0 || tiposCheck.some(function(tipoFiltro) {
-                return eventoTipos.some(function(tipoEvento) {
-                    return tipoEvento.toLowerCase() === tipoFiltro.toLowerCase();
-                });
-            });
-            const coincideLugar = lugaresCheck.length === 0 || lugaresCheck.some(function(lugarFiltro) {
-                return String(eventoLugar).toLowerCase() === lugarFiltro.toLowerCase();
-            });
             const coincideBusqueda = terminoBusqueda === '' || titulo.includes(terminoBusqueda);
-
-            return coincideTipo && coincideLugar && coincideBusqueda;
+            return coincideBusqueda;
         });
     }
 
     function mapearEventos(eventos) {
-        return eventos.map(function(evento) {
+        return eventos.map(function(evento, index) {
             const titulo = detectarTitulo(evento);
             const fecha = detectarFecha(evento);
             const link = obtenerPropiedad(evento, 'link');
@@ -653,8 +998,11 @@
             const whatsapp = obtenerPropiedad(evento, 'whatsapp');
             const tiposArray = obtenerTiposArray(evento);
             const colores = obtenerColorPorTipos(tiposArray);
+            const claveBusqueda = construirClaveEvento(evento);
+            const claveBusquedaId = encodeURIComponent(claveBusqueda);
 
             return {
+                id: 'evento-' + index + '-' + claveBusquedaId,
                 title: titulo,
                 start: fecha ? String(fecha).trim() : null,
                 url: link,
@@ -676,7 +1024,8 @@
                     link: link,
                     fecha_hora: fecha,
                     fechaFormateada: formatearFecha(fecha),
-                    tipos: tiposArray
+                    tipos: tiposArray,
+                    busquedaClave: claveBusqueda
                 }
             };
         }).filter(function(evento) {
