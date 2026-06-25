@@ -811,16 +811,28 @@ body {
     .search-container {
         padding: 10px 12px;
         flex-wrap: wrap;
+        gap: 6px;
     }
 
     .search-container input {
         min-width: 0;
         width: 100%;
+        flex-basis: 100%;
+    }
+
+    .search-container button {
+        font-size: 0.85rem;
+        padding: 0.4rem 0.65rem;
     }
 
     .search-modal-trigger {
         width: 100%;
         justify-content: center;
+    }
+
+    .evento-search-modal-card {
+        max-height: 92vh;
+        width: min(100%, 360px);
     }
 
     #calendario .fc-header-toolbar,

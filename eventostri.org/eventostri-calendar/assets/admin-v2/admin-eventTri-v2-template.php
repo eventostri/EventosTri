@@ -21,6 +21,18 @@
     <span id="contadorEventosV2" class="contador-eventos">0 eventos</span>
   </section>
 
+  <section class="admin-v2-search" aria-label="Búsqueda de eventos">
+    <div class="admin-search-bar">
+      <input type="text" id="adminSearchInput" placeholder="Buscar evento por nombre..." autocomplete="off"
+             aria-label="Buscar evento por nombre" aria-describedby="admin-search-help">
+      <button type="button" id="adminClearSearchBtn" class="btn-secondary admin-search-clear"
+              aria-label="Limpiar búsqueda" style="display:none;">×</button>
+      <button type="button" id="adminSearchModalTrigger" class="btn-secondary search-modal-trigger"
+              aria-label="Búsqueda avanzada (Ctrl+K)">Búsqueda avanzada</button>
+      <span id="admin-search-help" class="sr-only">Escribe para filtrar eventos por nombre en el calendario</span>
+    </div>
+  </section>
+
   <section id="calendario-admin-v2" class="calendario-grid"></section>
 
   <section class="filtros-container">
@@ -143,5 +155,18 @@
         </div>
       </form>
     </div>
+  </div>
+</div>
+
+<div id="modal-busqueda-admin" class="evento-search-modal-overlay" role="dialog" aria-modal="true" aria-labelledby="admin-search-modal-title">
+  <div class="evento-search-modal-card">
+        <button type="button" class="evento-search-modal-close" aria-label="Cerrar búsqueda">×</button>
+        <h3 id="admin-search-modal-title" class="evento-search-modal-title">Búsqueda de eventos</h3>
+        <p class="evento-search-modal-shortcut">Atajo: Ctrl+K / Cmd+K</p>
+        <input type="text" id="admin-search-modal-input" class="evento-search-modal-input" autocomplete="off"
+               placeholder="Buscar por nombre de evento..." aria-label="Buscar por nombre de evento"
+               aria-controls="admin-search-modal-results" aria-autocomplete="list">
+        <div id="admin-search-modal-status" class="evento-search-modal-status" aria-live="polite"></div>
+        <ul id="admin-search-modal-results" class="evento-search-modal-results" role="listbox" aria-label="Resultados de búsqueda"></ul>
   </div>
 </div>

@@ -259,13 +259,13 @@
         overlay.className = 'evento-modal-overlay';
 
         overlay.innerHTML = [
-            '<div class="evento-modal-card">',
+            '<div class="evento-modal-card" role="dialog" aria-modal="true" aria-labelledby="evento-modal-cal-title">',
             '<button class="evento-modal-close" aria-label="Cerrar detalle">×</button>',
             '<div class="evento-modal-image-wrap">',
             '<img class="evento-modal-image" alt="Imagen del evento">',
             '</div>',
             '<div class="evento-modal-content">',
-            '<h3 class="evento-modal-title"></h3>',
+            '<h3 id="evento-modal-cal-title" class="evento-modal-title"></h3>',
             '<div class="evento-modal-meta">',
             '<span class="evento-modal-label">LUGAR</span>',
             '<p class="evento-modal-place"></p>',
@@ -303,8 +303,20 @@
             }
         });
 
+        overlay.addEventListener('keydown', function(e) {
+            if (e.key === 'Escape') {
+                overlay.classList.remove('is-open');
+                if (overlay._ultimoFoco && typeof overlay._ultimoFoco.focus === 'function') {
+                    overlay._ultimoFoco.focus();
+                }
+            }
+        });
+
         overlay.querySelector('.evento-modal-close').addEventListener('click', function() {
             overlay.classList.remove('is-open');
+            if (overlay._ultimoFoco && typeof overlay._ultimoFoco.focus === 'function') {
+                overlay._ultimoFoco.focus();
+            }
         });
 
         document.body.appendChild(overlay);
@@ -435,6 +447,11 @@
         }
 
         modal.classList.add('is-open');
+        modal._ultimoFoco = document.activeElement;
+        const closeBtn = modal.querySelector('.evento-modal-close');
+        if (closeBtn) {
+            setTimeout(function() { closeBtn.focus(); }, 0);
+        }
     }
 
     function crearModalBusquedaEventos() {

@@ -19,6 +19,10 @@
   let filtrosTipoSeleccionados = new Set();
   let filtrosLugarSeleccionados = new Set();
   let rangoVisibleMes = null;
+  let terminoBusquedaAdmin = '';
+  let resultadosBusquedaAdmin = [];
+  let indiceActivoBusquedaAdmin = -1;
+  let ultimoElementoConFocoAdmin = null;
 
   const estadoSesionWP = {
     verificado: false,
@@ -197,6 +201,14 @@
     return fallback;
   }
 
+  function normalizarTextoBusqueda(valor) {
+    const base = String(valor || '').toLowerCase().trim();
+    if (typeof base.normalize === 'function') {
+      return base.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    }
+    return base;
+  }
+
   function esEventoPasado(evento) {
     const fechaPlano = String(evento.Fecha_Hora || '').split(/[T ]/)[0];
     const partes = fechaPlano.split('-');
@@ -373,8 +385,10 @@
         .some(f => tipos.includes(f.toLowerCase()));
       const pasaLugar = filtrosLugarSeleccionados.size === 0 || Array.from(filtrosLugarSeleccionados)
         .some(f => lugar === f.toLowerCase());
+      const pasaBusqueda = terminoBusquedaAdmin === '' ||
+        normalizarTextoBusqueda(ev.Titulo || '').includes(normalizarTextoBusqueda(terminoBusquedaAdmin));
 
-      return pasaTipo && pasaLugar;
+      return pasaTipo && pasaLugar && pasaBusqueda;
     });
   }
 
@@ -1025,6 +1039,228 @@
     }
   }
 
+  function inicializarBuscadorAdmin() {
+    const input = qs('adminSearchInput');
+    const clearBtn = qs('adminClearSearchBtn');
+    if (!input) return;
+
+    function actualizarUIBuscadorAdmin() {
+      if (clearBtn) clearBtn.style.display = input.value.trim() ? 'inline-flex' : 'none';
+    }
+
+    let searchTimeout;
+    input.addEventListener('input', function(e) {
+      clearTimeout(searchTimeout);
+      searchTimeout = setTimeout(function() {
+        terminoBusquedaAdmin = e.target.value.trim();
+        actualizarUIBuscadorAdmin();
+        renderCalendario();
+      }, 300);
+    });
+
+    input.addEventListener('keydown', function(e) {
+      if (e.key === 'Escape') {
+        input.value = '';
+        terminoBusquedaAdmin = '';
+        actualizarUIBuscadorAdmin();
+        renderCalendario();
+      }
+    });
+
+    if (clearBtn) {
+      clearBtn.addEventListener('click', function() {
+        input.value = '';
+        terminoBusquedaAdmin = '';
+        actualizarUIBuscadorAdmin();
+        input.focus();
+        renderCalendario();
+      });
+    }
+
+    actualizarUIBuscadorAdmin();
+  }
+
+  function obtenerElementosModalBusquedaAdmin() {
+    const modal = qs('modal-busqueda-admin');
+    if (!modal) return null;
+    return {
+      modal: modal,
+      close: modal.querySelector('.evento-search-modal-close'),
+      input: modal.querySelector('#admin-search-modal-input'),
+      status: modal.querySelector('#admin-search-modal-status'),
+      results: modal.querySelector('#admin-search-modal-results')
+    };
+  }
+
+  function obtenerResultadosBusquedaAdmin(termino) {
+    const t = normalizarTextoBusqueda(termino);
+    if (!t) return [];
+    return eventos
+      .filter(ev => normalizarTextoBusqueda(ev.Titulo || '').includes(t))
+      .slice(0, 30);
+  }
+
+  function actualizarIndiceActivoBusquedaAdmin(indiceNuevo) {
+    const elementos = obtenerElementosModalBusquedaAdmin();
+    if (!elementos) return;
+    const opciones = Array.from(elementos.results.querySelectorAll('.evento-search-result-option'));
+    if (opciones.length === 0) {
+      indiceActivoBusquedaAdmin = -1;
+      elementos.input.removeAttribute('aria-activedescendant');
+      return;
+    }
+    const n = Math.max(0, Math.min(indiceNuevo, opciones.length - 1));
+    indiceActivoBusquedaAdmin = n;
+    opciones.forEach(function(op, i) {
+      const activo = i === n;
+      op.classList.toggle('is-active', activo);
+      op.setAttribute('aria-selected', activo ? 'true' : 'false');
+      if (activo) {
+        elementos.input.setAttribute('aria-activedescendant', op.id);
+        op.scrollIntoView({ block: 'nearest' });
+      }
+    });
+  }
+
+  function renderizarResultadosBusquedaAdmin(termino) {
+    const elementos = obtenerElementosModalBusquedaAdmin();
+    if (!elementos) return;
+    const terminoVisible = String(termino || '').trim();
+    elementos.results.innerHTML = '';
+
+    if (!terminoVisible) {
+      elementos.status.textContent = 'Escribe para buscar eventos por nombre.';
+      indiceActivoBusquedaAdmin = -1;
+      return;
+    }
+
+    resultadosBusquedaAdmin = obtenerResultadosBusquedaAdmin(terminoVisible);
+    elementos.status.textContent = resultadosBusquedaAdmin.length
+      ? resultadosBusquedaAdmin.length + ' resultado(s) encontrado(s)'
+      : 'No hay resultados para "' + terminoVisible + '".';
+
+    resultadosBusquedaAdmin.forEach(function(ev, i) {
+      const li = document.createElement('li');
+      li.className = 'evento-search-result-item';
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'evento-search-result-option';
+      btn.id = 'admin-search-option-' + i;
+      btn.setAttribute('role', 'option');
+      btn.setAttribute('aria-selected', 'false');
+      btn.innerHTML = [
+        '<span class="evento-search-result-title"></span>',
+        '<span class="evento-search-result-meta"></span>',
+        '<span class="evento-search-result-type"></span>'
+      ].join('');
+      btn.querySelector('.evento-search-result-title').textContent = ev.Titulo || 'Evento deportivo';
+      btn.querySelector('.evento-search-result-meta').textContent =
+        (formatearFecha(ev.Fecha_Hora) || 'Fecha pendiente') + ' · ' + (ev.Lugar || 'Sin lugar');
+      btn.querySelector('.evento-search-result-type').textContent =
+        obtenerTiposArray(ev).join(' · ') || 'Sin tipo';
+      btn.addEventListener('mouseenter', function() { actualizarIndiceActivoBusquedaAdmin(i); });
+      btn.addEventListener('click', function() { seleccionarResultadoBusquedaAdmin(i); });
+      li.appendChild(btn);
+      elementos.results.appendChild(li);
+    });
+
+    actualizarIndiceActivoBusquedaAdmin(0);
+  }
+
+  function seleccionarResultadoBusquedaAdmin(indice) {
+    const ev = resultadosBusquedaAdmin[indice];
+    if (!ev) return;
+    cerrarModalBusquedaAdmin();
+    if (ev.Fecha_Hora && calendarioInstancia) {
+      calendarioInstancia.gotoDate(ev.Fecha_Hora);
+    }
+    setTimeout(function() { abrirModalEvento(ev, false); }, 0);
+  }
+
+  function abrirModalBusquedaAdmin(valorInicial) {
+    const elementos = obtenerElementosModalBusquedaAdmin();
+    if (!elementos) return;
+    ultimoElementoConFocoAdmin = document.activeElement;
+    elementos.modal.classList.add('is-open');
+    const termino = String(valorInicial || '').trim();
+    elementos.input.value = termino;
+    renderizarResultadosBusquedaAdmin(termino);
+    setTimeout(function() {
+      elementos.input.focus();
+      elementos.input.select();
+    }, 0);
+  }
+
+  function cerrarModalBusquedaAdmin() {
+    const elementos = obtenerElementosModalBusquedaAdmin();
+    if (!elementos) return;
+    elementos.modal.classList.remove('is-open');
+    indiceActivoBusquedaAdmin = -1;
+    resultadosBusquedaAdmin = [];
+    elementos.input.value = '';
+    elementos.input.removeAttribute('aria-activedescendant');
+    elementos.results.innerHTML = '';
+    elementos.status.textContent = '';
+    if (ultimoElementoConFocoAdmin && typeof ultimoElementoConFocoAdmin.focus === 'function') {
+      ultimoElementoConFocoAdmin.focus();
+    }
+  }
+
+  function inicializarBusquedaModalAdmin() {
+    const elementos = obtenerElementosModalBusquedaAdmin();
+    const trigger = qs('adminSearchModalTrigger');
+    const searchInput = qs('adminSearchInput');
+    if (!elementos || !trigger) return;
+
+    elementos.close.addEventListener('click', cerrarModalBusquedaAdmin);
+
+    let timeoutBusquedaModal;
+    elementos.input.addEventListener('input', function(e) {
+      clearTimeout(timeoutBusquedaModal);
+      timeoutBusquedaModal = setTimeout(function() {
+        renderizarResultadosBusquedaAdmin(e.target.value);
+      }, 180);
+    });
+
+    elementos.input.addEventListener('keydown', function(e) {
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        actualizarIndiceActivoBusquedaAdmin(indiceActivoBusquedaAdmin + 1);
+      } else if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        actualizarIndiceActivoBusquedaAdmin(indiceActivoBusquedaAdmin - 1);
+      } else if (e.key === 'Enter') {
+        if (indiceActivoBusquedaAdmin >= 0) {
+          e.preventDefault();
+          seleccionarResultadoBusquedaAdmin(indiceActivoBusquedaAdmin);
+        }
+      } else if (e.key === 'Escape') {
+        e.preventDefault();
+        cerrarModalBusquedaAdmin();
+      }
+    });
+
+    elementos.modal.addEventListener('click', function(e) {
+      if (e.target === elementos.modal) cerrarModalBusquedaAdmin();
+    });
+
+    trigger.addEventListener('click', function() {
+      abrirModalBusquedaAdmin(searchInput ? searchInput.value : '');
+    });
+
+    document.addEventListener('keydown', function(e) {
+      const tecla = String(e.key || '').toLowerCase();
+      const atajoBusqueda = (e.ctrlKey || e.metaKey) && tecla === 'k';
+      if (atajoBusqueda) {
+        e.preventDefault();
+        abrirModalBusquedaAdmin(searchInput ? searchInput.value : '');
+      } else if (tecla === 'escape' && elementos.modal.classList.contains('is-open')) {
+        e.preventDefault();
+        cerrarModalBusquedaAdmin();
+      }
+    });
+  }
+
   function vincularEventosUI() {
     const btnCargar = qs('btnCargarApiV2');
     const btnImportarCsv = qs('btnImportarCsvV2');
@@ -1092,6 +1328,8 @@
       registrarLog('Verificacion inicial: ' + estadoSesionWP.usuarioTexto + ' | ' + estadoSesionWP.detalle, tipo);
     });
 
+    inicializarBuscadorAdmin();
+    inicializarBusquedaModalAdmin();
     cargarDesdeWordPressAPI();
   }
 
