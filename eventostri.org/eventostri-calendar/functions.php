@@ -1,4 +1,6 @@
 <?php
+require_once get_template_directory() . '/admin/eventostri-settings.php';
+
 function eventostri_debe_cargar_admin_v2() {
     if (is_page(array('administrar-calendario', 'administrar-calendario-v2'))) {
         return true;
@@ -84,6 +86,9 @@ function cargar_scripts_deportivos() {
 
         wp_localize_script('eventostri-admin-v2-script', 'eventostriAdminV2Config', array(
             'exportCsvUrl' => esc_url_raw(wp_nonce_url(admin_url('admin-post.php?action=eventostri_export_csv'), 'eventostri_export_csv')),
+            'labels' => array(
+                'newEvent' => eventostri_get_calendar_label('new_event'),
+            ),
         ));
     }
 
@@ -104,7 +109,11 @@ function cargar_scripts_deportivos() {
 add_action('wp_enqueue_scripts', 'cargar_scripts_deportivos');
 
 function eventostri_shortcode_calendario() {
-    return '<div class="wrapper-eventos"><div class="search-container"><input type="text" id="evento-search-input" placeholder="Buscar eventos por nombre..." autocomplete="off" aria-label="Buscar eventos" aria-describedby="search-help"><button type="button" id="clear-search-btn" aria-label="Limpiar busqueda" style="display:none;">x</button><button type="button" id="search-modal-trigger" class="search-modal-trigger" aria-label="Abrir buscador avanzado (Ctrl+K)">Busqueda avanzada</button><span id="search-help" class="sr-only">Escribe para filtrar eventos por nombre</span></div><div id="calendario" class="calendario-grid"></div><div class="filtros-container"><div class="filtro-grupo"><label>Filtrar por Tipo de Evento:</label><div id="filtro-tipo-container" class="checkbox-group-box"></div></div><div class="filtro-grupo"><label>Filtrar por Ubicaci&#243;n:</label><div id="filtro-lugar-container" class="checkbox-group-box"></div></div></div></div>';
+    $placeholder = esc_attr__('Buscar eventos por nombre...', 'eventostri-calendar');
+    $aria_label = esc_attr__('Buscar eventos', 'eventostri-calendar');
+    $help = esc_html__('Escribe para filtrar eventos por nombre. Doble clic para abrir busqueda avanzada.', 'eventostri-calendar');
+
+    return '<div class="wrapper-eventos"><div class="search-container"><div class="search-input-wrap"><input type="text" id="evento-search-input" placeholder="' . $placeholder . '" autocomplete="off" aria-label="' . $aria_label . '" aria-describedby="search-help" aria-autocomplete="list" aria-expanded="false" aria-controls="evento-search-inline-results"><button type="button" id="clear-search-btn" aria-label="Limpiar busqueda" style="display:none;">x</button><ul id="evento-search-inline-results" class="evento-search-inline-results" role="listbox" aria-label="Resultados de busqueda en linea" hidden></ul></div><span id="search-help" class="sr-only">' . $help . '</span></div><div id="calendario" class="calendario-grid"></div><div class="filtros-container"><div class="filtro-grupo"><label>Filtrar por Tipo de Evento:</label><div id="filtro-tipo-container" class="checkbox-group-box"></div></div><div class="filtro-grupo"><label>Filtrar por Ubicaci&#243;n:</label><div id="filtro-lugar-container" class="checkbox-group-box"></div></div></div></div>';
 }
 add_shortcode('eventostri_calendario', 'eventostri_shortcode_calendario');
 
@@ -121,6 +130,7 @@ function eventostri_shortcode_admin_v2() {
 add_shortcode('eventostri_admin_v2', 'eventostri_shortcode_admin_v2');
 
 function configurar_tema_deportivo() {
+    load_theme_textdomain('eventostri-calendar', get_template_directory() . '/languages');
     add_theme_support('wp-block-styles');
     add_theme_support('align-wide');
     add_theme_support('responsive-embeds');

@@ -7,10 +7,10 @@
     <div class="admin-v2-actions">
       <button type="button" id="btnVerificarSesionV2" class="btn-secondary">Verificar sesión</button>
       <button type="button" id="btnCargarApiV2" class="btn-load">Cargar desde WordPress</button>
-      <button type="button" id="btnImportarCsvV2" class="btn-secondary">Importar CSV</button>
-      <button type="button" id="btnExportarCsvV2" class="btn-secondary">Exportar CSV</button>
-      <button type="button" id="btnEliminarPasadosV2" class="btn-secondary">Eliminar pasados</button>
-      <button type="button" id="btnNuevoEventoV2" class="btn-block">Nuevo evento</button>
+      <button type="button" id="btnImportarCsvV2" class="btn-secondary"><?php echo esc_html(eventostri_get_calendar_label('import_csv')); ?></button>
+      <button type="button" id="btnExportarCsvV2" class="btn-secondary"><?php echo esc_html(eventostri_get_calendar_label('export_csv')); ?></button>
+      <button type="button" id="btnEliminarPasadosV2" class="btn-secondary"><?php echo esc_html(eventostri_get_calendar_label('delete_past')); ?></button>
+      <button type="button" id="btnNuevoEventoV2" class="btn-block"><?php echo esc_html(eventostri_get_calendar_label('new_event')); ?></button>
       <input type="file" id="inputCsvV2" accept=".csv,text/csv" style="display:none;">
     </div>
   </section>
@@ -21,15 +21,19 @@
     <span id="contadorEventosV2" class="contador-eventos">0 eventos</span>
   </section>
 
-  <section class="admin-v2-search" aria-label="Búsqueda de eventos">
-    <div class="admin-search-bar">
-      <input type="text" id="adminSearchInput" placeholder="Buscar evento por nombre..." autocomplete="off"
-             aria-label="Buscar evento por nombre" aria-describedby="admin-search-help">
-      <button type="button" id="adminClearSearchBtn" class="btn-secondary admin-search-clear"
-              aria-label="Limpiar búsqueda" style="display:none;">×</button>
-      <button type="button" id="adminSearchModalTrigger" class="btn-secondary search-modal-trigger"
-              aria-label="Búsqueda avanzada (Ctrl+K)">Búsqueda avanzada</button>
-      <span id="admin-search-help" class="sr-only">Escribe para filtrar eventos por nombre en el calendario</span>
+  <section class="admin-v2-search search-container">
+    <div class="search-input-wrap">
+      <input
+        type="text"
+        id="evento-search-input-admin-v2"
+        placeholder="Buscar eventos por nombre..."
+        autocomplete="off"
+        aria-label="Buscar eventos en admin"
+        aria-autocomplete="list"
+        aria-expanded="false"
+        aria-controls="evento-search-inline-results-admin-v2">
+      <button type="button" id="clear-search-admin-v2" aria-label="Limpiar busqueda" style="display:none;">x</button>
+      <ul id="evento-search-inline-results-admin-v2" class="evento-search-inline-results" role="listbox" aria-label="Resultados de busqueda en admin" hidden></ul>
     </div>
   </section>
 
@@ -60,7 +64,7 @@
   <div class="evento-modal-card evento-modal-card-form" role="dialog" aria-modal="true" aria-labelledby="modalTitleV2">
     <button type="button" id="btnCerrarModalV2" class="evento-modal-close" aria-label="Cerrar">x</button>
     <div class="evento-modal-content evento-modal-content-form">
-      <h3 id="modalTitleV2" class="evento-modal-title">Nuevo evento</h3>
+      <h3 id="modalTitleV2" class="evento-modal-title"><?php echo esc_html(eventostri_get_calendar_label('new_event')); ?></h3>
       <p id="modalSubtitleV2" class="modal-subtitle">Completa los campos para crear o actualizar el evento.</p>
 
       <div id="mensajeEstadoV2" class="mensaje-estado" role="status" aria-live="polite"></div>
@@ -155,18 +159,5 @@
         </div>
       </form>
     </div>
-  </div>
-</div>
-
-<div id="modal-busqueda-admin" class="evento-search-modal-overlay" role="dialog" aria-modal="true" aria-labelledby="admin-search-modal-title">
-  <div class="evento-search-modal-card">
-        <button type="button" class="evento-search-modal-close" aria-label="Cerrar búsqueda">×</button>
-        <h3 id="admin-search-modal-title" class="evento-search-modal-title">Búsqueda de eventos</h3>
-        <p class="evento-search-modal-shortcut">Atajo: Ctrl+K / Cmd+K</p>
-        <input type="text" id="admin-search-modal-input" class="evento-search-modal-input" autocomplete="off"
-               placeholder="Buscar por nombre de evento..." aria-label="Buscar por nombre de evento"
-               aria-controls="admin-search-modal-results" aria-autocomplete="list">
-        <div id="admin-search-modal-status" class="evento-search-modal-status" aria-live="polite"></div>
-        <ul id="admin-search-modal-results" class="evento-search-modal-results" role="listbox" aria-label="Resultados de búsqueda"></ul>
   </div>
 </div>

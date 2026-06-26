@@ -2,11 +2,11 @@
 Theme Name: EventosTri Calendar
 Theme URI: #
 Author: Alver with Geminis' and Copilot Github's assistance
-Description: Tema minimalista para calendario de eventos deportivos.
+Description: Tema minimalista para calendario de eventos deportivos. Antelope v1.0 - Ultima fase implementada: 5.2
 Version: 1.0
 */
 
-/* 1. IMPORTAR FUENTE - ¡Esto es vital para que Inter funcione! */
+/* 1. IMPORTAR FUENTE - Esto es vital para que Inter funcione */
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap');
 
 /* --- Paleta de Colores Deportiva --- */
@@ -169,6 +169,63 @@ body {
 
 .search-container input::placeholder {
     color: #999;
+}
+
+.search-input-wrap {
+    position: relative;
+    flex: 1 1 0;
+    min-width: 0;
+    max-width: 100%;
+}
+
+.search-input-wrap input {
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+    box-sizing: border-box;
+    padding-right: 2.4rem;
+}
+
+.search-input-wrap #clear-search-btn {
+    position: absolute;
+    right: 6px;
+    top: 50%;
+    transform: translateY(-50%);
+    z-index: 13;
+}
+
+.evento-search-inline-results {
+    position: absolute;
+    top: calc(100% + 6px);
+    left: 0;
+    right: 0;
+    margin: 0;
+    padding: 6px;
+    list-style: none;
+    border: 1px solid var(--border-color);
+    border-radius: 10px;
+    background: #fff;
+    box-shadow: 0 12px 24px rgba(15, 23, 42, 0.14);
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    max-height: 320px;
+    overflow-y: auto;
+    z-index: 12;
+}
+
+.evento-search-inline-results[hidden] {
+    display: none;
+}
+
+.evento-search-inline-results .evento-search-result-option {
+    border-radius: 8px;
+}
+
+.evento-search-inline-empty {
+    padding: 8px 10px;
+    color: var(--muted-color);
+    font-size: 0.85rem;
 }
 
 #clear-search-btn {
@@ -778,7 +835,7 @@ body {
     width: auto !important;
 }
 
-/* --- Adaptación Móvil --- */
+/* --- Adaptacion Movil --- */
 @media (max-width: 768px) {
     /* Compact page header area (not FullCalendar title) */
     .site-header {
@@ -811,28 +868,16 @@ body {
     .search-container {
         padding: 10px 12px;
         flex-wrap: wrap;
-        gap: 6px;
     }
 
     .search-container input {
         min-width: 0;
         width: 100%;
-        flex-basis: 100%;
-    }
-
-    .search-container button {
-        font-size: 0.85rem;
-        padding: 0.4rem 0.65rem;
     }
 
     .search-modal-trigger {
         width: 100%;
         justify-content: center;
-    }
-
-    .evento-search-modal-card {
-        max-height: 92vh;
-        width: min(100%, 360px);
     }
 
     #calendario .fc-header-toolbar,
@@ -935,3 +980,5 @@ body {
         line-height: 1.05 !important;
     }
 }
+
+

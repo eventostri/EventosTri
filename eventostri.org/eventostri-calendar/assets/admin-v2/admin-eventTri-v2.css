@@ -53,6 +53,15 @@
   margin-bottom: 12px;
 }
 
+.admin-v2-search {
+  margin-bottom: 12px;
+}
+
+.admin-v2-search.search-container {
+  background: #f9f9f9;
+  border: 1px solid #e0e0e0;
+}
+
 .auth-pill {
   display: inline-flex;
   align-items: center;
@@ -154,7 +163,7 @@
   width: 420px;
   height: 420px;
   transform: translate(-50%, -50%);
-  background-image: url('https://eventostri.org/wp-content/uploads/2026/01/cropped-eventostriicon.png');
+  background-image: var(--calendar-logo);
   background-repeat: no-repeat;
   background-position: center;
   background-size: contain;
@@ -420,66 +429,6 @@ button {
 .btn-table-delete { background-color: #d9534f; }
 .btn-table-delete:hover { background-color: #b52b27; }
 
-.admin-v2-search {
-  margin-bottom: 12px;
-}
-
-.admin-search-bar {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 10px 14px;
-  background: #f7f9ff;
-  border: 1px solid var(--border-color);
-  border-radius: 8px;
-}
-
-.admin-search-bar input {
-  flex: 1;
-  min-width: 200px;
-  padding: 8px 12px;
-  border: 1px solid #c9d7f1;
-  border-radius: 6px;
-  font-size: 0.95rem;
-  font-family: inherit;
-  color: var(--text-color);
-  background: #fff;
-}
-
-.admin-search-bar input:focus {
-  outline: none;
-  border-color: var(--primary-color);
-  box-shadow: 0 0 0 3px rgba(11, 95, 255, 0.12);
-}
-
-.admin-search-bar input::placeholder {
-  color: #9aacce;
-}
-
-.admin-search-clear {
-  width: 34px;
-  height: 34px;
-  padding: 0;
-  border-radius: 999px;
-  font-size: 18px;
-  line-height: 1;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.sr-only {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  padding: 0;
-  margin: -1px;
-  overflow: hidden;
-  clip: rect(0, 0, 0, 0);
-  white-space: nowrap;
-  border: 0;
-}
-
 @media (max-width: 920px) {
   .form-row {
     flex-direction: column;
@@ -487,27 +436,6 @@ button {
 }
 
 @media (max-width: 768px) {
-  .admin-v2-actions {
-    width: 100%;
-  }
-
-  .admin-v2-actions button {
-    flex: 1 1 calc(50% - 4px);
-  }
-
-  .admin-search-bar {
-    flex-wrap: wrap;
-  }
-
-  .admin-search-bar input {
-    width: 100%;
-    min-width: 0;
-  }
-
-  .admin-search-bar .search-modal-trigger {
-    width: 100%;
-  }
-
   #calendario-admin-v2 {
     width: 100vw;
     max-width: 100vw;
@@ -535,3 +463,4 @@ button {
     padding: 0.2rem 0.4rem !important;
   }
 }
+
