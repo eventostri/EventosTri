@@ -53,6 +53,15 @@
   margin-bottom: 12px;
 }
 
+.admin-v2-search {
+  margin-bottom: 12px;
+}
+
+.admin-v2-search.search-container {
+  background: #f9f9f9;
+  border: 1px solid #e0e0e0;
+}
+
 .auth-pill {
   display: inline-flex;
   align-items: center;
@@ -154,7 +163,7 @@
   width: 420px;
   height: 420px;
   transform: translate(-50%, -50%);
-  background-image: url('https://eventostri.org/wp-content/uploads/2026/01/cropped-eventostriicon.png');
+  background-image: var(--calendar-logo);
   background-repeat: no-repeat;
   background-position: center;
   background-size: contain;
@@ -454,3 +463,4 @@ button {
     padding: 0.2rem 0.4rem !important;
   }
 }
+

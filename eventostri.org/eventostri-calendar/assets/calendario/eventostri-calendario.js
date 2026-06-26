@@ -13,6 +13,12 @@
     let resultadosBusquedaModal = [];
     let ultimoTerminoAnaliticaModal = '';
     let ultimoElementoConFoco = null;
+    let indiceActivoBusquedaInline = -1;
+    let resultadosBusquedaInline = [];
+    let timeoutBlurBusquedaInline = null;
+    const pilaHistorialModales = [];
+    let omitirSiguientePopstateModal = false;
+    let swipeNavegacionInicializada = false;
     const CLAVE_ANALITICA_BUSQUEDA = '__eventostriSearchAnalytics';
     const urlJSON = (window.eventostriCalendarioConfig && window.eventostriCalendarioConfig.eventosUrl)
         ? window.eventostriCalendarioConfig.eventosUrl
@@ -149,16 +155,16 @@
             hour12: true
         });
 
-        const diaSemanaFmt = diaSemana.replace(/(^|\s)([a-záéíóúñ])/gi, function(match, espacio, letra) {
+        const diaSemanaFmt = diaSemana.replace(/(^|\s)([a-zÃ¡Ã©Ã­Ã³ÃºÃ±])/gi, function(match, espacio, letra) {
             return espacio + letra.toUpperCase();
         });
         const diaFmt = dia.replace(/^0/, '');
-        const mesFmt = mes.replace(/(^|\s)([a-záéíóúñ])/gi, function(match, espacio, letra) {
+        const mesFmt = mes.replace(/(^|\s)([a-zÃ¡Ã©Ã­Ã³ÃºÃ±])/gi, function(match, espacio, letra) {
             return espacio + letra.toUpperCase();
         });
         const horaFmt = hora.replace(/\s/g, '').replace(/\./g, '').replace(/(?<=\d)(AM|PM)/i, ' $1');
 
-        return diaSemanaFmt + ', ' + diaFmt + ' de ' + mesFmt + ' de ' + anio + ' · ' + horaFmt;
+        return diaSemanaFmt + ', ' + diaFmt + ' de ' + mesFmt + ' de ' + anio + ' Â· ' + horaFmt;
     }
 
     function normalizarTextoBusqueda(valor) {
@@ -186,6 +192,105 @@
             detectarFecha(evento),
             obtenerPropiedad(evento, 'lugar')
         );
+    }
+
+    function registrarModalEnHistorial(modalId) {
+        if (!window.history || typeof window.history.pushState !== 'function') {
+            return;
+        }
+
+        window.history.pushState({ eventostriModal: modalId }, document.title);
+        pilaHistorialModales.push(modalId);
+    }
+
+    function removerModalDeHistorial(modalId, desdePopstate) {
+        const index = pilaHistorialModales.lastIndexOf(modalId);
+        if (index === -1) {
+            return;
+        }
+
+        pilaHistorialModales.splice(index, 1);
+        if (!desdePopstate && window.history && typeof window.history.back === 'function') {
+            omitirSiguientePopstateModal = true;
+            window.history.back();
+        }
+    }
+
+    function cerrarModalDetalleEvento(desdePopstate) {
+        const modal = document.getElementById('modal-evento-calendario');
+        if (!modal || !modal.classList.contains('is-open')) {
+            return;
+        }
+        modal.classList.remove('is-open');
+        removerModalDeHistorial('detalle', Boolean(desdePopstate));
+    }
+
+    function inicializarGestorBackGesturesModales() {
+        if (window.__eventostriModalBackGesturesInicializado) {
+            return;
+        }
+        window.__eventostriModalBackGesturesInicializado = true;
+
+        window.addEventListener('popstate', function() {
+            if (omitirSiguientePopstateModal) {
+                omitirSiguientePopstateModal = false;
+                return;
+            }
+
+            const ultimoModal = pilaHistorialModales[pilaHistorialModales.length - 1];
+            if (!ultimoModal) {
+                return;
+            }
+
+            if (ultimoModal === 'search') {
+                cerrarModalBusquedaEventos(true);
+                return;
+            }
+
+            if (ultimoModal === 'detalle') {
+                cerrarModalDetalleEvento(true);
+            }
+        });
+    }
+
+    function inicializarNavegacionSwipeCalendario(contenedor) {
+        if (swipeNavegacionInicializada || !contenedor) {
+            return;
+        }
+        swipeNavegacionInicializada = true;
+
+        let touchStartX = 0;
+        let touchStartY = 0;
+
+        contenedor.addEventListener('touchstart', function(event) {
+            if (!event.touches || event.touches.length !== 1) {
+                return;
+            }
+            const touch = event.touches[0];
+            touchStartX = touch.clientX;
+            touchStartY = touch.clientY;
+        }, { passive: true });
+
+        contenedor.addEventListener('touchend', function(event) {
+            if (!event.changedTouches || event.changedTouches.length !== 1 || !calendarioInstancia) {
+                return;
+            }
+            const touch = event.changedTouches[0];
+            const deltaX = touch.clientX - touchStartX;
+            const deltaY = touch.clientY - touchStartY;
+            const absX = Math.abs(deltaX);
+            const absY = Math.abs(deltaY);
+
+            if (absX < 70 || absX < absY * 1.3) {
+                return;
+            }
+
+            if (deltaX > 0) {
+                calendarioInstancia.next();
+            } else {
+                calendarioInstancia.prev();
+            }
+        }, { passive: true });
     }
 
     function registrarAnaliticaBusqueda(tipo, payload) {
@@ -260,7 +365,7 @@
 
         overlay.innerHTML = [
             '<div class="evento-modal-card">',
-            '<button class="evento-modal-close" aria-label="Cerrar detalle">×</button>',
+            '<button class="evento-modal-close" aria-label="Cerrar detalle">Ã—</button>',
             '<div class="evento-modal-image-wrap">',
             '<img class="evento-modal-image" alt="Imagen del evento">',
             '</div>',
@@ -299,12 +404,12 @@
 
         overlay.addEventListener('click', function(e) {
             if (e.target === overlay) {
-                overlay.classList.remove('is-open');
+                cerrarModalDetalleEvento(false);
             }
         });
 
         overlay.querySelector('.evento-modal-close').addEventListener('click', function() {
-            overlay.classList.remove('is-open');
+            cerrarModalDetalleEvento(false);
         });
 
         document.body.appendChild(overlay);
@@ -434,7 +539,11 @@
             whatsappBlock.style.display = 'none';
         }
 
+        const modalYaAbierto = modal.classList.contains('is-open');
         modal.classList.add('is-open');
+        if (!modalYaAbierto) {
+            registrarModalEnHistorial('detalle');
+        }
     }
 
     function crearModalBusquedaEventos() {
@@ -447,7 +556,7 @@
         overlay.className = 'evento-search-modal-overlay';
         overlay.innerHTML = [
             '<div class="evento-search-modal-card" role="dialog" aria-modal="true" aria-labelledby="evento-search-modal-title">',
-            '<button type="button" class="evento-search-modal-close" aria-label="Cerrar busqueda">×</button>',
+            '<button type="button" class="evento-search-modal-close" aria-label="Cerrar busqueda">Ã—</button>',
             '<h3 id="evento-search-modal-title" class="evento-search-modal-title">Busqueda avanzada</h3>',
             '<p class="evento-search-modal-shortcut">Atajo: Ctrl+K / Cmd+K</p>',
             '<input type="text" id="evento-search-modal-input" class="evento-search-modal-input" autocomplete="off" placeholder="Buscar por nombre de evento..." aria-label="Buscar por nombre de evento">',
@@ -511,7 +620,13 @@
             });
             if (!eventoCalendario) return;
             resaltarEventoCalendario(eventoCalendario);
-            mostrarDetalleEvento(eventoCalendario);
+            const selector = '#calendario .fc-event[data-event-id= + escaparParaSelector(eventoCalendario.id) + ]';
+            const elemento = document.querySelector(selector);
+            if (elemento) {
+                elemento.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                elemento.setAttribute('tabindex', '-1');
+                elemento.focus({ preventScroll: true });
+            }
         }, 180);
     }
 
@@ -540,7 +655,7 @@
         });
     }
 
-    function obtenerResultadosBusquedaModal(termino) {
+    function obtenerResultadosBusqueda(termino, limite) {
         const terminoNormalizado = normalizarTextoBusqueda(termino);
         if (!terminoNormalizado) {
             return [];
@@ -550,7 +665,15 @@
             .filter(function(evento) {
                 return normalizarTextoBusqueda(detectarTitulo(evento)).includes(terminoNormalizado);
             })
-            .slice(0, 30);
+            .slice(0, limite);
+    }
+
+    function obtenerResultadosBusquedaModal(termino) {
+        return obtenerResultadosBusqueda(termino, 30);
+    }
+
+    function obtenerResultadosBusquedaInline(termino) {
+        return obtenerResultadosBusqueda(termino, 10);
     }
 
     function actualizarIndiceActivoBusquedaModal(indiceNuevo) {
@@ -624,7 +747,7 @@
             const titulo = detectarTitulo(evento);
             const fecha = formatearFecha(detectarFecha(evento));
             const lugar = obtenerPropiedad(evento, 'lugar') || 'Sin lugar';
-            const tipos = obtenerTiposArray(evento).join(' · ') || 'Sin tipo';
+            const tipos = obtenerTiposArray(evento).join(' Â· ') || 'Sin tipo';
 
             const li = document.createElement('li');
             li.className = 'evento-search-result-item';
@@ -641,7 +764,7 @@
                 '<span class="evento-search-result-type"></span>'
             ].join('');
             boton.querySelector('.evento-search-result-title').textContent = titulo;
-            boton.querySelector('.evento-search-result-meta').textContent = (fecha || 'Fecha pendiente') + ' · ' + lugar;
+            boton.querySelector('.evento-search-result-meta').textContent = (fecha || 'Fecha pendiente') + ' Â· ' + lugar;
             boton.querySelector('.evento-search-result-type').textContent = tipos;
             boton.addEventListener('mouseenter', function() {
                 actualizarIndiceActivoBusquedaModal(indice);
@@ -660,7 +783,11 @@
     function abrirModalBusquedaEventos(valorInicial) {
         const elementos = obtenerElementosModalBusqueda();
         ultimoElementoConFoco = document.activeElement;
+        const modalYaAbierto = elementos.modal.classList.contains('is-open');
         elementos.modal.classList.add('is-open');
+        if (!modalYaAbierto) {
+            registrarModalEnHistorial('search');
+        }
         terminoBusquedaModal = String(valorInicial || '').trim();
         elementos.input.value = terminoBusquedaModal;
         renderizarResultadosBusquedaModal();
@@ -670,7 +797,7 @@
         }, 0);
     }
 
-    function cerrarModalBusquedaEventos() {
+    function cerrarModalBusquedaEventos(desdePopstate) {
         const elementos = obtenerElementosModalBusqueda();
         elementos.modal.classList.remove('is-open');
         indiceActivoBusquedaModal = -1;
@@ -680,12 +807,13 @@
         elementos.input.removeAttribute('aria-activedescendant');
         elementos.results.innerHTML = '';
         elementos.status.textContent = '';
+        removerModalDeHistorial('search', Boolean(desdePopstate));
         if (ultimoElementoConFoco && typeof ultimoElementoConFoco.focus === 'function') {
             ultimoElementoConFoco.focus();
         }
     }
 
-    function inicializarBusquedaModalEventos(searchModalTrigger, searchInput) {
+    function inicializarBusquedaModalEventos(searchInput) {
         const elementos = obtenerElementosModalBusqueda();
         let timeoutBusquedaModal;
 
@@ -725,9 +853,11 @@
             }
         });
 
-        searchModalTrigger.addEventListener('click', function() {
-            abrirModalBusquedaEventos(searchInput ? searchInput.value : '');
-        });
+        if (searchInput) {
+            searchInput.addEventListener('dblclick', function() {
+                abrirModalBusquedaEventos(searchInput.value || '');
+            });
+        }
 
         document.addEventListener('keydown', function(e) {
             const tecla = String(e.key || '').toLowerCase();
@@ -748,7 +878,6 @@
         const contenedorCalendario = document.getElementById('calendario');
         const searchInput = document.getElementById('evento-search-input');
         const clearSearchBtn = document.getElementById('clear-search-btn');
-        const searchModalTrigger = document.getElementById('search-modal-trigger');
 
         if (!contenedorTipo || !contenedorLugar || !contenedorCalendario) {
             return false;
@@ -766,18 +895,113 @@
         if (searchInput && clearSearchBtn) {
             inicializarBuscadorEventos(searchInput, clearSearchBtn);
         }
-        if (searchModalTrigger) {
-            inicializarBusquedaModalEventos(searchModalTrigger, searchInput);
-        }
+        inicializarGestorBackGesturesModales();
+        inicializarBusquedaModalEventos(searchInput);
         actualizarCalendarioDinamico(obtenerEventosFiltradosActuales());
         return true;
     }
 
     function inicializarBuscadorEventos(searchInput, clearSearchBtn) {
+        const resultadosInline = document.getElementById('evento-search-inline-results');
         let searchTimeout;
 
         function actualizarUIBuscador() {
             clearSearchBtn.style.display = terminoBusqueda ? 'inline-flex' : 'none';
+        }
+
+        function ocultarResultadosInline() {
+            if (!resultadosInline) return;
+            resultadosInline.hidden = true;
+            resultadosInline.innerHTML = '';
+            indiceActivoBusquedaInline = -1;
+            resultadosBusquedaInline = [];
+            searchInput.setAttribute('aria-expanded', 'false');
+            searchInput.removeAttribute('aria-activedescendant');
+        }
+
+        function actualizarIndiceActivoInline(indiceNuevo) {
+            if (!resultadosInline) return;
+            const opciones = Array.from(resultadosInline.querySelectorAll('.evento-search-result-option'));
+            if (opciones.length === 0) {
+                indiceActivoBusquedaInline = -1;
+                searchInput.removeAttribute('aria-activedescendant');
+                return;
+            }
+
+            indiceActivoBusquedaInline = Math.max(0, Math.min(indiceNuevo, opciones.length - 1));
+            opciones.forEach(function(opcion, indice) {
+                const activo = indice === indiceActivoBusquedaInline;
+                opcion.classList.toggle('is-active', activo);
+                opcion.setAttribute('aria-selected', activo ? 'true' : 'false');
+                if (activo) {
+                    searchInput.setAttribute('aria-activedescendant', opcion.id);
+                    opcion.scrollIntoView({ block: 'nearest' });
+                }
+            });
+        }
+
+        function seleccionarResultadoInline(indice) {
+            const evento = resultadosBusquedaInline[indice];
+            if (!evento) return;
+            const titulo = detectarTitulo(evento);
+            searchInput.value = titulo;
+            terminoBusqueda = titulo.toLowerCase();
+            actualizarUIBuscador();
+            actualizarCalendarioDinamico(obtenerEventosFiltradosActuales());
+            ocultarResultadosInline();
+            enfocarEventoEnCalendario(evento);
+        }
+
+        function renderizarResultadosInline() {
+            if (!resultadosInline) return;
+            const terminoVisible = String(searchInput.value || '').trim();
+            resultadosInline.innerHTML = '';
+
+            if (!terminoVisible) {
+                ocultarResultadosInline();
+                return;
+            }
+
+            resultadosBusquedaInline = obtenerResultadosBusquedaInline(terminoVisible);
+            if (resultadosBusquedaInline.length === 0) {
+                const li = document.createElement('li');
+                li.className = 'evento-search-inline-empty';
+                li.textContent = 'No hay eventos coincidentes.';
+                resultadosInline.appendChild(li);
+                resultadosInline.hidden = false;
+                searchInput.setAttribute('aria-expanded', 'true');
+                indiceActivoBusquedaInline = -1;
+                return;
+            }
+
+            resultadosBusquedaInline.forEach(function(evento, indice) {
+                const titulo = detectarTitulo(evento);
+                const fecha = formatearFecha(detectarFecha(evento));
+                const lugar = obtenerPropiedad(evento, 'lugar') || 'Sin lugar';
+
+                const li = document.createElement('li');
+                const boton = document.createElement('button');
+                boton.type = 'button';
+                boton.id = 'evento-search-inline-option-' + indice;
+                boton.className = 'evento-search-result-option';
+                boton.setAttribute('role', 'option');
+                boton.setAttribute('aria-selected', 'false');
+                boton.innerHTML = '<span class="evento-search-result-title"></span><span class="evento-search-result-meta"></span>';
+                boton.querySelector('.evento-search-result-title').textContent = titulo;
+                boton.querySelector('.evento-search-result-meta').textContent = (fecha || 'Fecha pendiente') + ' · ' + lugar;
+                boton.addEventListener('mouseenter', function() {
+                    actualizarIndiceActivoInline(indice);
+                });
+                boton.addEventListener('click', function() {
+                    seleccionarResultadoInline(indice);
+                });
+                li.appendChild(boton);
+                resultadosInline.appendChild(li);
+            });
+
+            resultadosInline.hidden = false;
+            searchInput.setAttribute('aria-expanded', 'true');
+            actualizarIndiceActivoInline(0);
         }
 
         searchInput.addEventListener('input', function(e) {
@@ -786,15 +1010,53 @@
                 terminoBusqueda = String(e.target.value || '').trim().toLowerCase();
                 actualizarUIBuscador();
                 actualizarCalendarioDinamico(obtenerEventosFiltradosActuales());
-            }, 300);
+                renderizarResultadosInline();
+            }, 220);
+        });
+
+        searchInput.addEventListener('focus', function() {
+            if (timeoutBlurBusquedaInline) {
+                clearTimeout(timeoutBlurBusquedaInline);
+                timeoutBlurBusquedaInline = null;
+            }
+            if (String(searchInput.value || '').trim()) {
+                renderizarResultadosInline();
+            }
+        });
+
+        searchInput.addEventListener('blur', function() {
+            timeoutBlurBusquedaInline = setTimeout(function() {
+                ocultarResultadosInline();
+            }, 140);
         });
 
         searchInput.addEventListener('keydown', function(e) {
+            if (e.key === 'ArrowDown') {
+                if (!resultadosInline || resultadosInline.hidden) {
+                    renderizarResultadosInline();
+                }
+                if (resultadosBusquedaInline.length > 0) {
+                    e.preventDefault();
+                    actualizarIndiceActivoInline(indiceActivoBusquedaInline + 1);
+                }
+                return;
+            }
+            if (e.key === 'ArrowUp' && resultadosBusquedaInline.length > 0) {
+                e.preventDefault();
+                actualizarIndiceActivoInline(indiceActivoBusquedaInline - 1);
+                return;
+            }
+            if (e.key === 'Enter' && indiceActivoBusquedaInline >= 0 && resultadosBusquedaInline.length > 0) {
+                e.preventDefault();
+                seleccionarResultadoInline(indiceActivoBusquedaInline);
+                return;
+            }
             if (e.key === 'Escape') {
                 searchInput.value = '';
                 terminoBusqueda = '';
                 actualizarUIBuscador();
                 actualizarCalendarioDinamico(obtenerEventosFiltradosActuales());
+                ocultarResultadosInline();
             }
         });
 
@@ -802,6 +1064,7 @@
             searchInput.value = '';
             terminoBusqueda = '';
             actualizarUIBuscador();
+            ocultarResultadosInline();
             searchInput.focus();
             actualizarCalendarioDinamico(obtenerEventosFiltradosActuales());
         });
@@ -970,6 +1233,7 @@
         });
 
         calendarioInstancia.render();
+        inicializarNavegacionSwipeCalendario(contenedorEl);
         forzarRecalculoTamanoCalendario();
         window.addEventListener('resize', forzarRecalculoTamanoCalendario);
         window.addEventListener('load', forzarRecalculoTamanoCalendario);
@@ -1045,3 +1309,4 @@
         forzarRecalculoTamanoCalendario();
     }
 })();
+
