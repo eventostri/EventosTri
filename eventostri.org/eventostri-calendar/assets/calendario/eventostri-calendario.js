@@ -365,7 +365,7 @@
 
         overlay.innerHTML = [
             '<div class="evento-modal-card">',
-            '<button class="evento-modal-close" aria-label="Cerrar detalle">Ã—</button>',
+            '<button class="evento-modal-close" aria-label="Cerrar detalle">&times;</button>',
             '<div class="evento-modal-image-wrap">',
             '<img class="evento-modal-image" alt="Imagen del evento">',
             '</div>',
@@ -556,7 +556,7 @@
         overlay.className = 'evento-search-modal-overlay';
         overlay.innerHTML = [
             '<div class="evento-search-modal-card" role="dialog" aria-modal="true" aria-labelledby="evento-search-modal-title">',
-            '<button type="button" class="evento-search-modal-close" aria-label="Cerrar busqueda">Ã—</button>',
+            '<button type="button" class="evento-search-modal-close" aria-label="Cerrar busqueda">&times;</button>',
             '<h3 id="evento-search-modal-title" class="evento-search-modal-title">Busqueda avanzada</h3>',
             '<p class="evento-search-modal-shortcut">Atajo: Ctrl+K / Cmd+K</p>',
             '<input type="text" id="evento-search-modal-input" class="evento-search-modal-input" autocomplete="off" placeholder="Buscar por nombre de evento..." aria-label="Buscar por nombre de evento">',
