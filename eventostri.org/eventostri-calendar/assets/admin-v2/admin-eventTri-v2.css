@@ -62,6 +62,42 @@
   border: 1px solid #e0e0e0;
 }
 
+.admin-v2-search .search-input-wrap {
+  position: relative;
+  flex: 1 1 0;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.admin-v2-search .search-input-wrap input {
+  width: 100%;
+  box-sizing: border-box;
+  padding-right: 2.4rem;
+}
+
+#clear-search-admin-v2 {
+  position: absolute;
+  right: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: none;
+  background-color: #6c757d;
+  color: #fff;
+  font-size: 18px;
+  cursor: pointer;
+  z-index: 13;
+}
+
+#clear-search-admin-v2:hover {
+  background-color: #ccc;
+}
+
 .auth-pill {
   display: inline-flex;
   align-items: center;

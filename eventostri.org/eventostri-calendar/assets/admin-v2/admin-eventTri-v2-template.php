@@ -5,7 +5,7 @@
       <p>Calendario modificable</p>
     </div>
     <div class="admin-v2-actions">
-      <button type="button" id="btnVerificarSesionV2" class="btn-secondary">Verificar sesión</button>
+      <button type="button" id="btnVerificarSesionV2" class="btn-secondary"><?php echo esc_html(eventostri_get_calendar_label('verify_session')); ?></button>
       <button type="button" id="btnCargarApiV2" class="btn-load">Cargar desde WordPress</button>
       <button type="button" id="btnImportarCsvV2" class="btn-secondary"><?php echo esc_html(eventostri_get_calendar_label('import_csv')); ?></button>
       <button type="button" id="btnExportarCsvV2" class="btn-secondary"><?php echo esc_html(eventostri_get_calendar_label('export_csv')); ?></button>
@@ -153,9 +153,9 @@
         </div>
 
         <div class="form-actions">
-          <button type="button" id="btnEliminarEventoV2" class="btn-table-delete" style="display:none;">Eliminar</button>
-          <button type="button" id="btnCancelarModalV2" class="btn-secondary">Cancelar</button>
-          <button type="submit" id="btnGuardarEventoV2" class="btn-block">Guardar evento</button>
+          <button type="button" id="btnEliminarEventoV2" class="btn-table-delete" style="display:none;"><?php echo esc_html(eventostri_get_calendar_label('delete')); ?></button>
+          <button type="button" id="btnCancelarModalV2" class="btn-secondary"><?php echo esc_html(eventostri_get_calendar_label('cancel')); ?></button>
+          <button type="submit" id="btnGuardarEventoV2" class="btn-block"><?php echo esc_html(eventostri_get_calendar_label('save')); ?></button>
         </div>
       </form>
     </div>

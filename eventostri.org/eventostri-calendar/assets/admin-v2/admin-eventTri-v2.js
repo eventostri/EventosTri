@@ -14,6 +14,10 @@
   const apiAuthStatusUrl = adminRestConfig.authStatusUrl || '/wp-json/eventostri/v1/auth-status';
   const apiExportCsvUrl = adminConfig.exportCsvUrl || '';
   const etiquetaNuevoEvento = adminLabelsConfig.new_event || adminLabelsConfig.newEvent || 'Nuevo evento';
+  const etiquetaVerificarSesion = adminLabelsConfig.verify_session || adminLabelsConfig.verifySession || 'Verificar sesión';
+  const etiquetaGuardar = adminLabelsConfig.save || 'Guardar';
+  const etiquetaEliminar = adminLabelsConfig.delete || 'Eliminar';
+  const etiquetaCancelar = adminLabelsConfig.cancel || 'Cancelar';
 
   let eventos = [];
   let calendarioInstancia = null;
@@ -24,9 +28,24 @@
   let filtrosLugarSeleccionados = new Set();
   let rangoVisibleMes = null;
   let terminoBusquedaAdmin = '';
+  let terminoBusquedaModalAdmin = '';
+  let indiceActivoBusquedaModalAdmin = -1;
+  let resultadosBusquedaModalAdmin = [];
+  let ultimoElementoConFocoAdmin = null;
   const historialModalAdmin = [];
   let omitirSiguientePopstateAdmin = false;
   let swipeAdminInicializado = false;
+  const CLAVE_FILTROS_AVANZADOS_ADMIN = '__eventostriSearchAdvancedFiltersAdmin';
+  const CLAVE_FILTROS_CHECKS_ADMIN = '__eventostriSearchCheckFiltersAdmin';
+  let filtrosAvanzadosBusquedaAdmin = {
+    dateFrom: '',
+    dateTo: '',
+    distanceMin: '',
+    distanceMax: '',
+    organizer: '',
+    status: '',
+    maxDistance: ''
+  };
 
   const estadoSesionWP = {
     verificado: false,
@@ -36,6 +55,11 @@
     usuarioTexto: 'No detectado',
     detalle: 'Sin verificacion'
   };
+
+  const filtrosChecksAdminPersistidos = Object.assign({ tipos: [], lugares: [] }, cargarJSONLocalStorage(CLAVE_FILTROS_CHECKS_ADMIN, {}));
+  filtrosTipoSeleccionados = new Set((filtrosChecksAdminPersistidos.tipos || []).map(v => String(v)));
+  filtrosLugarSeleccionados = new Set((filtrosChecksAdminPersistidos.lugares || []).map(v => String(v)));
+  filtrosAvanzadosBusquedaAdmin = Object.assign(filtrosAvanzadosBusquedaAdmin, cargarJSONLocalStorage(CLAVE_FILTROS_AVANZADOS_ADMIN, {}));
 
   function qs(id) {
     return document.getElementById(id);
@@ -77,6 +101,8 @@
       const ultimoModal = historialModalAdmin[historialModalAdmin.length - 1];
       if (ultimoModal === 'modal-admin-v2') {
         cerrarModal(true);
+      } else if (ultimoModal === 'search') {
+        cerrarModalBusquedaAdmin(true);
       }
     });
   }
@@ -103,6 +129,10 @@
       if (!event.changedTouches || event.changedTouches.length !== 1 || !calendarioInstancia) {
         return;
       }
+      const target = event.target;
+      if (target && target.closest('button, a, input, select, textarea')) {
+        return;
+      }
       const touch = event.changedTouches[0];
       const deltaX = touch.clientX - touchStartX;
       const deltaY = touch.clientY - touchStartY;
@@ -113,7 +143,8 @@
         return;
       }
 
-      if (deltaX > 0) {
+      // swipe left (deltaX < 0) → advance; swipe right (deltaX > 0) → go back
+      if (deltaX < 0) {
         calendarioInstancia.next();
       } else {
         calendarioInstancia.prev();
@@ -225,7 +256,7 @@
     if (!estadoSesionWP.verificado) {
       flag.classList.add('state-pending');
       flag.textContent = 'Sin verificar';
-      detail.textContent = 'Ejecuta Verificar sesion para comprobar acceso de guardado.';
+      detail.textContent = 'Ejecuta ' + etiquetaVerificarSesion + ' para comprobar acceso de guardado.';
       return;
     }
 
@@ -532,6 +563,68 @@
     return base;
   }
 
+  function cargarJSONLocalStorage(clave, fallback) {
+    try {
+      const raw = localStorage.getItem(clave);
+      if (!raw) return fallback;
+      const parsed = JSON.parse(raw);
+      return parsed && typeof parsed === 'object' ? parsed : fallback;
+    } catch (error) {
+      return fallback;
+    }
+  }
+
+  function guardarJSONLocalStorage(clave, valor) {
+    try {
+      localStorage.setItem(clave, JSON.stringify(valor));
+    } catch (error) {
+      return;
+    }
+  }
+
+  function parsearDistanciasEvento(ev) {
+    return String(ev.Distancias || '')
+      .split(/[,;/]+/)
+      .map(item => {
+        const match = String(item).replace(',', '.').match(/(\d+(?:\.\d+)?)/);
+        return match ? parseFloat(match[1]) : NaN;
+      })
+      .filter(valor => !Number.isNaN(valor));
+  }
+
+  function eventoCoincideFiltrosAvanzadosAdmin(ev, filtros) {
+    const fechaBase = String(ev.Fecha_Hora || '').split(/[T ]/)[0];
+    const organizer = normalizarTextoBusqueda(ev.Organizador || '');
+    const status = normalizarTextoBusqueda(ev.Estado || '');
+    const distancias = parsearDistanciasEvento(ev);
+    const minDist = distancias.length ? Math.min.apply(null, distancias) : null;
+    const maxDist = distancias.length ? Math.max.apply(null, distancias) : null;
+
+    if (filtros.dateFrom && (!fechaBase || fechaBase < filtros.dateFrom)) return false;
+    if (filtros.dateTo && (!fechaBase || fechaBase > filtros.dateTo)) return false;
+    if (filtros.organizer && !organizer.includes(normalizarTextoBusqueda(filtros.organizer))) return false;
+    if (filtros.status && status !== normalizarTextoBusqueda(filtros.status)) return false;
+
+    if (filtros.distanceMin !== '') {
+      const distanceMin = parseFloat(filtros.distanceMin);
+      if (!Number.isNaN(distanceMin) && (maxDist === null || maxDist < distanceMin)) return false;
+    }
+    if (filtros.distanceMax !== '') {
+      const distanceMax = parseFloat(filtros.distanceMax);
+      if (!Number.isNaN(distanceMax) && (minDist === null || minDist > distanceMax)) return false;
+    }
+    if (filtros.maxDistance !== '' && typeof navigator !== 'undefined' && navigator.geolocation) {
+      const maxDistance = parseFloat(filtros.maxDistance);
+      if (!Number.isNaN(maxDistance) && (minDist === null || minDist > maxDistance)) return false;
+    }
+    return true;
+  }
+
+  function contarFiltrosActivosAdmin(filtros) {
+    const keys = ['dateFrom', 'dateTo', 'distanceMin', 'distanceMax', 'organizer', 'status', 'maxDistance'];
+    return keys.reduce((total, key) => total + (String(filtros[key] || '').trim() ? 1 : 0), 0);
+  }
+
   function escaparParaSelector(valor) {
     return String(valor || '')
       .split('\\').join('\\\\')
@@ -563,6 +656,13 @@
     const contador = qs('contadorEventosV2');
     if (!contador) return;
     contador.textContent = eventos.length + (eventos.length === 1 ? ' evento' : ' eventos');
+  }
+
+  function guardarFiltrosChecksAdmin() {
+    guardarJSONLocalStorage(CLAVE_FILTROS_CHECKS_ADMIN, {
+      tipos: Array.from(filtrosTipoSeleccionados),
+      lugares: Array.from(filtrosLugarSeleccionados)
+    });
   }
 
   function generarCheckboxes(eventosBase, propiedad, contenedorId, seleccionados) {
@@ -608,6 +708,7 @@
         } else {
           seleccionados.delete(opcion);
         }
+        guardarFiltrosChecksAdmin();
         renderCalendario();
       });
 
@@ -790,6 +891,276 @@
     }, 180);
   }
 
+  function crearModalBusquedaAdmin() {
+    const existente = qs('evento-search-modal-admin-v2');
+    if (existente) return existente;
+
+    const overlay = document.createElement('div');
+    overlay.id = 'evento-search-modal-admin-v2';
+    overlay.className = 'evento-search-modal-overlay';
+    overlay.innerHTML = [
+      '<div class="evento-search-modal-card" role="dialog" aria-modal="true" aria-labelledby="evento-search-modal-admin-title">',
+      '<button type="button" class="evento-search-modal-close" aria-label="Cerrar busqueda">&times;</button>',
+      '<h3 id="evento-search-modal-admin-title" class="evento-search-modal-title">Busqueda avanzada</h3>',
+      '<p class="evento-search-modal-shortcut">Atajo: Ctrl+K / Cmd+K</p>',
+      '<div class="evento-search-modal-filters" style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;">',
+      '<label style="display:flex;flex-direction:column;font-size:12px;">Fecha desde<input type="date" id="evento-search-admin-filter-date-from"></label>',
+      '<label style="display:flex;flex-direction:column;font-size:12px;">Fecha hasta<input type="date" id="evento-search-admin-filter-date-to"></label>',
+      '<label style="display:flex;flex-direction:column;font-size:12px;">Distancia mínima (km)<input type="number" step="0.1" min="0" id="evento-search-admin-filter-distance-min"></label>',
+      '<label style="display:flex;flex-direction:column;font-size:12px;">Distancia máxima (km)<input type="number" step="0.1" min="0" id="evento-search-admin-filter-distance-max"></label>',
+      '<label style="display:flex;flex-direction:column;font-size:12px;">Organizador<input type="text" id="evento-search-admin-filter-organizer"></label>',
+      '<label style="display:flex;flex-direction:column;font-size:12px;">Estado<input type="text" id="evento-search-admin-filter-status" placeholder="YUC/CAM/QROO"></label>',
+      '<label style="display:flex;flex-direction:column;font-size:12px;">Max distancia (km)<input type="number" step="0.1" min="0" id="evento-search-admin-filter-max-distance"></label>',
+      '<div style="display:flex;align-items:end;gap:8px;"><span id="evento-search-admin-filter-badge" style="display:inline-flex;align-items:center;justify-content:center;min-width:22px;height:22px;padding:0 8px;border-radius:999px;background:#e2e8f0;font-size:12px;">0</span><button type="button" id="evento-search-admin-filter-clear" class="button">Limpiar filtros</button></div>',
+      '</div>',
+      '<input type="text" id="evento-search-modal-admin-input" class="evento-search-modal-input" autocomplete="off" placeholder="Buscar por nombre de evento..." aria-label="Buscar por nombre de evento">',
+      '<div id="evento-search-modal-admin-status" class="evento-search-modal-status" aria-live="polite"></div>',
+      '<ul id="evento-search-modal-admin-results" class="evento-search-modal-results" role="listbox" aria-label="Resultados de busqueda en admin"></ul>',
+      '</div>'
+    ].join('');
+
+    overlay.addEventListener('click', e => {
+      if (e.target === overlay) cerrarModalBusquedaAdmin();
+    });
+
+    document.body.appendChild(overlay);
+    return overlay;
+  }
+
+  function obtenerElementosModalBusquedaAdmin() {
+    const modal = crearModalBusquedaAdmin();
+    return {
+      modal: modal,
+      close: modal.querySelector('.evento-search-modal-close'),
+      input: modal.querySelector('#evento-search-modal-admin-input'),
+      status: modal.querySelector('#evento-search-modal-admin-status'),
+      results: modal.querySelector('#evento-search-modal-admin-results'),
+      filterDateFrom: modal.querySelector('#evento-search-admin-filter-date-from'),
+      filterDateTo: modal.querySelector('#evento-search-admin-filter-date-to'),
+      filterDistanceMin: modal.querySelector('#evento-search-admin-filter-distance-min'),
+      filterDistanceMax: modal.querySelector('#evento-search-admin-filter-distance-max'),
+      filterOrganizer: modal.querySelector('#evento-search-admin-filter-organizer'),
+      filterStatus: modal.querySelector('#evento-search-admin-filter-status'),
+      filterMaxDistance: modal.querySelector('#evento-search-admin-filter-max-distance'),
+      filterBadge: modal.querySelector('#evento-search-admin-filter-badge'),
+      filterClear: modal.querySelector('#evento-search-admin-filter-clear')
+    };
+  }
+
+  function obtenerResultadosBusquedaAdminModal(termino) {
+    const normalizado = normalizarTextoBusqueda(termino);
+    if (!normalizado) return [];
+    return obtenerEventosFiltrados()
+      .filter(ev => normalizarTextoBusqueda(ev.Titulo || '').includes(normalizado))
+      .filter(ev => eventoCoincideFiltrosAvanzadosAdmin(ev, filtrosAvanzadosBusquedaAdmin))
+      .slice(0, 30);
+  }
+
+  function actualizarIndiceModalBusquedaAdmin(indiceNuevo) {
+    const elementos = obtenerElementosModalBusquedaAdmin();
+    const opciones = Array.from(elementos.results.querySelectorAll('.evento-search-result-option'));
+    if (opciones.length === 0) {
+      indiceActivoBusquedaModalAdmin = -1;
+      elementos.input.removeAttribute('aria-activedescendant');
+      return;
+    }
+    indiceActivoBusquedaModalAdmin = Math.max(0, Math.min(indiceNuevo, opciones.length - 1));
+    opciones.forEach((opcion, index) => {
+      const activo = index === indiceActivoBusquedaModalAdmin;
+      opcion.classList.toggle('is-active', activo);
+      opcion.setAttribute('aria-selected', activo ? 'true' : 'false');
+      if (activo) {
+        elementos.input.setAttribute('aria-activedescendant', opcion.id);
+        opcion.scrollIntoView({ block: 'nearest' });
+      }
+    });
+  }
+
+  function seleccionarResultadoBusquedaAdminModal(indice) {
+    const evento = resultadosBusquedaModalAdmin[indice];
+    if (!evento) return;
+    const searchInput = qs('evento-search-input-admin-v2');
+    if (searchInput) {
+      searchInput.value = evento.Titulo || '';
+      terminoBusquedaAdmin = normalizarTextoBusqueda(searchInput.value || '');
+    }
+    cerrarModalBusquedaAdmin();
+    renderCalendario();
+    enfocarEventoAdmin(evento);
+  }
+
+  function renderizarResultadosBusquedaAdminModal() {
+    const elementos = obtenerElementosModalBusquedaAdmin();
+    const terminoVisible = String(terminoBusquedaModalAdmin || '').trim();
+    const filtrosActivos = contarFiltrosActivosAdmin(filtrosAvanzadosBusquedaAdmin);
+    elementos.results.innerHTML = '';
+    if (elementos.filterBadge) elementos.filterBadge.textContent = String(filtrosActivos);
+
+    if (!terminoVisible) {
+      elementos.status.textContent = 'Escribe para buscar eventos por nombre.' + (filtrosActivos ? (' Filtros activos: ' + filtrosActivos + '.') : '');
+      indiceActivoBusquedaModalAdmin = -1;
+      return;
+    }
+
+    resultadosBusquedaModalAdmin = obtenerResultadosBusquedaAdminModal(terminoVisible);
+    elementos.status.textContent = resultadosBusquedaModalAdmin.length
+      ? (resultadosBusquedaModalAdmin.length + ' resultado(s) encontrados' + (filtrosActivos ? (' · Filtros: ' + filtrosActivos) : ''))
+      : ('No hay resultados para "' + terminoVisible + '".');
+
+    resultadosBusquedaModalAdmin.forEach((evento, indice) => {
+      const li = document.createElement('li');
+      const boton = document.createElement('button');
+      boton.type = 'button';
+      boton.className = 'evento-search-result-option';
+      boton.id = 'evento-search-admin-modal-option-' + indice;
+      boton.setAttribute('role', 'option');
+      boton.setAttribute('aria-selected', 'false');
+      boton.innerHTML = '<span class="evento-search-result-title"></span><span class="evento-search-result-meta"></span><span class="evento-search-result-type"></span>';
+      boton.querySelector('.evento-search-result-title').textContent = evento.Titulo || 'Evento deportivo';
+      boton.querySelector('.evento-search-result-meta').textContent = (formatearFecha(evento.Fecha_Hora) || 'Fecha pendiente') + ' · ' + (evento.Lugar || 'Sin lugar');
+      boton.querySelector('.evento-search-result-type').textContent = obtenerTiposArray(evento).join(' · ') || 'Sin tipo';
+      boton.addEventListener('mouseenter', () => actualizarIndiceModalBusquedaAdmin(indice));
+      boton.addEventListener('click', () => seleccionarResultadoBusquedaAdminModal(indice));
+      li.appendChild(boton);
+      elementos.results.appendChild(li);
+    });
+
+    actualizarIndiceModalBusquedaAdmin(0);
+  }
+
+  function abrirModalBusquedaAdmin(valorInicial) {
+    const elementos = obtenerElementosModalBusquedaAdmin();
+    ultimoElementoConFocoAdmin = document.activeElement;
+    if (!elementos.modal.classList.contains('is-open')) {
+      registrarModalAdminEnHistorial('search');
+    }
+    elementos.modal.classList.add('is-open');
+    elementos.filterDateFrom.value = filtrosAvanzadosBusquedaAdmin.dateFrom || '';
+    elementos.filterDateTo.value = filtrosAvanzadosBusquedaAdmin.dateTo || '';
+    elementos.filterDistanceMin.value = filtrosAvanzadosBusquedaAdmin.distanceMin || '';
+    elementos.filterDistanceMax.value = filtrosAvanzadosBusquedaAdmin.distanceMax || '';
+    elementos.filterOrganizer.value = filtrosAvanzadosBusquedaAdmin.organizer || '';
+    elementos.filterStatus.value = filtrosAvanzadosBusquedaAdmin.status || '';
+    elementos.filterMaxDistance.value = filtrosAvanzadosBusquedaAdmin.maxDistance || '';
+    terminoBusquedaModalAdmin = String(valorInicial || '').trim();
+    elementos.input.value = terminoBusquedaModalAdmin;
+    renderizarResultadosBusquedaAdminModal();
+    setTimeout(() => {
+      elementos.input.focus();
+      elementos.input.select();
+    }, 0);
+  }
+
+  function cerrarModalBusquedaAdmin(desdePopstate) {
+    const elementos = obtenerElementosModalBusquedaAdmin();
+    elementos.modal.classList.remove('is-open');
+    indiceActivoBusquedaModalAdmin = -1;
+    resultadosBusquedaModalAdmin = [];
+    terminoBusquedaModalAdmin = '';
+    elementos.input.value = '';
+    elementos.input.removeAttribute('aria-activedescendant');
+    elementos.results.innerHTML = '';
+    elementos.status.textContent = '';
+    removerModalAdminEnHistorial('search', Boolean(desdePopstate));
+    if (ultimoElementoConFocoAdmin && typeof ultimoElementoConFocoAdmin.focus === 'function') {
+      ultimoElementoConFocoAdmin.focus();
+    }
+  }
+
+  function inicializarBusquedaModalAdmin(searchInput) {
+    const elementos = obtenerElementosModalBusquedaAdmin();
+    let timeoutBusquedaModal;
+    if (elementos.modal.dataset.initSearchModal === 'true') return;
+    elementos.modal.dataset.initSearchModal = 'true';
+
+    const actualizarFiltros = () => {
+      filtrosAvanzadosBusquedaAdmin = {
+        dateFrom: String(elementos.filterDateFrom.value || '').trim(),
+        dateTo: String(elementos.filterDateTo.value || '').trim(),
+        distanceMin: String(elementos.filterDistanceMin.value || '').trim(),
+        distanceMax: String(elementos.filterDistanceMax.value || '').trim(),
+        organizer: String(elementos.filterOrganizer.value || '').trim(),
+        status: String(elementos.filterStatus.value || '').trim(),
+        maxDistance: String(elementos.filterMaxDistance.value || '').trim()
+      };
+      guardarJSONLocalStorage(CLAVE_FILTROS_AVANZADOS_ADMIN, filtrosAvanzadosBusquedaAdmin);
+      renderizarResultadosBusquedaAdminModal();
+    };
+
+    elementos.close.addEventListener('click', () => cerrarModalBusquedaAdmin());
+    elementos.input.addEventListener('input', e => {
+      clearTimeout(timeoutBusquedaModal);
+      timeoutBusquedaModal = setTimeout(() => {
+        terminoBusquedaModalAdmin = String(e.target.value || '').trim();
+        renderizarResultadosBusquedaAdminModal();
+      }, 180);
+    });
+    elementos.input.addEventListener('keydown', e => {
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        actualizarIndiceModalBusquedaAdmin(indiceActivoBusquedaModalAdmin + 1);
+        return;
+      }
+      if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        actualizarIndiceModalBusquedaAdmin(indiceActivoBusquedaModalAdmin - 1);
+        return;
+      }
+      if (e.key === 'Enter' && indiceActivoBusquedaModalAdmin >= 0) {
+        e.preventDefault();
+        seleccionarResultadoBusquedaAdminModal(indiceActivoBusquedaModalAdmin);
+        return;
+      }
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        cerrarModalBusquedaAdmin();
+      }
+    });
+
+    [
+      elementos.filterDateFrom,
+      elementos.filterDateTo,
+      elementos.filterDistanceMin,
+      elementos.filterDistanceMax,
+      elementos.filterOrganizer,
+      elementos.filterStatus,
+      elementos.filterMaxDistance
+    ].forEach(control => {
+      if (!control) return;
+      control.addEventListener('input', actualizarFiltros);
+      control.addEventListener('change', actualizarFiltros);
+    });
+
+    if (elementos.filterClear) {
+      elementos.filterClear.addEventListener('click', () => {
+        elementos.filterDateFrom.value = '';
+        elementos.filterDateTo.value = '';
+        elementos.filterDistanceMin.value = '';
+        elementos.filterDistanceMax.value = '';
+        elementos.filterOrganizer.value = '';
+        elementos.filterStatus.value = '';
+        elementos.filterMaxDistance.value = '';
+        actualizarFiltros();
+      });
+    }
+
+    if (searchInput) {
+      searchInput.addEventListener('dblclick', () => abrirModalBusquedaAdmin(searchInput.value || ''));
+    }
+
+    document.addEventListener('keydown', e => {
+      const tecla = String(e.key || '').toLowerCase();
+      const atajoBusqueda = (e.ctrlKey || e.metaKey) && tecla === 'k';
+      if (atajoBusqueda) {
+        e.preventDefault();
+        abrirModalBusquedaAdmin(searchInput ? searchInput.value : '');
+      } else if (tecla === 'escape' && elementos.modal.classList.contains('is-open')) {
+        e.preventDefault();
+        cerrarModalBusquedaAdmin();
+      }
+    });
+  }
+
   function inicializarBuscadorAdmin(searchInput, clearBtn, resultadosInline) {
     if (!searchInput || !clearBtn || !resultadosInline) {
       return;
@@ -968,12 +1339,13 @@
         contentHeight: 'auto',
         expandRows: true,
         locale: 'es',
+        firstDay: 1,
         titleFormat: { year: 'numeric', month: 'short' },
         hiddenDays: calcularDiasAOcultar(filtrados, rangoVisibleMes),
         buttonText: {
           today: 'Hoy',
           dayGridMonth: 'Mes',
-          timeGridWeek: 'Semana',
+          listWeek: 'Semana',
           listMonth: 'Lista'
         },
         headerToolbar: {
@@ -983,7 +1355,7 @@
         },
         footerToolbar: {
           start: 'today',
-          end: 'dayGridMonth,timeGridWeek,listMonth'
+          end: 'dayGridMonth,listWeek,listMonth'
         },
         eventTimeFormat: { hour: 'numeric', minute: '2-digit', meridiem: false, hour12: false, omitZeroMinute: true },
         events: eventosMapeados,
@@ -1573,6 +1945,7 @@
     const btnLimpiarLog = qs('btnLimpiarLogV2');
     const btnCerrar = qs('btnCerrarModalV2');
     const btnCancelarModal = qs('btnCancelarModalV2');
+    const btnGuardar = qs('btnGuardarEventoV2');
     const btnEliminar = qs('btnEliminarEventoV2');
     const inputCsv = qs('inputCsvV2');
     const form = qs('formEventoV2');
@@ -1585,6 +1958,11 @@
       setTimeout(vincularEventosUI, 200);
       return;
     }
+
+    btnVerificar.textContent = etiquetaVerificarSesion;
+    if (btnCancelarModal) btnCancelarModal.textContent = etiquetaCancelar;
+    if (btnGuardar) btnGuardar.textContent = etiquetaGuardar;
+    if (btnEliminar) btnEliminar.textContent = etiquetaEliminar;
 
     btnCargar.addEventListener('click', cargarDesdeWordPressAPI);
     if (btnImportarCsv && inputCsv) {
@@ -1634,6 +2012,7 @@
 
     inicializarBackGestureModalAdmin();
     inicializarBuscadorAdmin(searchInput, clearSearchBtn, searchResults);
+    inicializarBusquedaModalAdmin(searchInput);
     actualizarBanderaSesionUI();
     registrarLog('Panel v2 cargado. Verificando sesion automaticamente...', 'info');
     verificarSesionWordPressAPI(true).then(() => {
@@ -1679,8 +2058,3 @@
     init();
   }
 })();
-
-
-
-
-

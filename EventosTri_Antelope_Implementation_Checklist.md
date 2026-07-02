@@ -233,27 +233,27 @@ Replace hardcoded event colors with admin-configurable values.
 Make requested admin labels configurable and prepare the UI for localization.
 
 ### Tasks
-- [ ] Expand `eventostri_calendar_labels` schema
-- [ ] Add requested label fields to settings page
-- [ ] Localize configured labels into admin UI/template
-- [ ] Replace hardcoded action labels where required:
-  - [ ] Nuevo evento
-  - [ ] Importar CSV
-  - [ ] Exportar CSV
-  - [ ] Eliminar eventos pasados
-- [ ] Optionally include additional operational labels if approved:
-  - [ ] Verificar sesion
-  - [ ] Guardar
-  - [ ] Eliminar
-  - [ ] Cancelar
-- [ ] Preserve translation defaults when an option is empty
+- [x] Expand `eventostri_calendar_labels` schema
+- [x] Add requested label fields to settings page
+- [x] Localize configured labels into admin UI/template
+- [x] Replace hardcoded action labels where required:
+  - [x] Nuevo evento
+  - [x] Importar CSV
+  - [x] Exportar CSV
+  - [x] Eliminar eventos pasados
+- [x] Optionally include additional operational labels if approved:
+  - [x] Verificar sesion
+  - [x] Guardar
+  - [x] Eliminar
+  - [x] Cancelar
+- [x] Preserve translation defaults when an option is empty
 
 ### Validation
-- [ ] Updated labels display in admin UI
-- [ ] Empty labels fall back to translated defaults
+- [x] Updated labels display in admin UI
+- [x] Empty labels fall back to translated defaults
 
 ### Exit Criteria
-- [ ] Configurable label requirements are complete
+- [x] Configurable label requirements are complete
 
 ---
 
@@ -265,48 +265,48 @@ Make search behavior consistent in both calendars and complete the inline + moda
 ### Tasks
 
 #### 6.1 Shared search interaction behavior
-- [ ] Ensure admin inline search behaves like public inline search
-- [ ] Suggestions open after typing 1+ characters
-- [ ] Suggestions close on blur / Escape
-- [ ] Limit visible suggestions to top 8-10
-- [ ] Debounce search input to 150-250ms
+- [x] Ensure admin inline search behaves like public inline search
+- [x] Suggestions open after typing 1+ characters
+- [x] Suggestions close on blur / Escape
+- [x] Limit visible suggestions to top 8-10
+- [x] Debounce search input to 150-250ms
 
 #### 6.2 Inline selection behavior
-- [ ] Support mouse selection
-- [ ] Support keyboard selection
-- [ ] Navigate / scroll to matching event card on selection
-- [ ] Apply temporary highlight to the target event card
+- [x] Support mouse selection
+- [x] Support keyboard selection
+- [x] Navigate / scroll to matching event card on selection
+- [x] Apply temporary highlight to the target event card
 
 #### 6.3 Modal search entry
-- [ ] Double-click on `evento-search-input` opens advanced search modal in public calendar
-- [ ] Double-click on admin search input opens advanced search modal in admin calendar
-- [ ] Maintain existing shortcut support (`Ctrl+K` / `Cmd+K`)
+- [x] Double-click on `evento-search-input` opens advanced search modal in public calendar
+- [x] Double-click on admin search input opens advanced search modal in admin calendar
+- [x] Maintain existing shortcut support (`Ctrl+K` / `Cmd+K`)
 
 #### 6.4 Advanced filters
-- [ ] Add date range filters
-- [ ] Add distance range filters
-- [ ] Add organizer filter
-- [ ] Add event status filter
-- [ ] Add max distance filter if geolocation is enabled
-- [ ] Persist filter selections
-- [ ] Show active filter count badge
-- [ ] Add clear-all filters action
+- [x] Add date range filters
+- [x] Add distance range filters
+- [x] Add organizer filter
+- [x] Add event status filter
+- [x] Add max distance filter if geolocation is enabled
+- [x] Persist filter selections
+- [x] Show active filter count badge
+- [x] Add clear-all filters action
 
 #### 6.5 Accessibility
-- [ ] Use combobox/listbox semantics
-- [ ] Implement `aria-expanded`, `aria-controls`, `aria-activedescendant`
-- [ ] Support Arrow Up / Down, Enter, Escape
-- [ ] Announce result count and active option changes
-- [ ] Return focus appropriately after close
+- [x] Use combobox/listbox semantics
+- [x] Implement `aria-expanded`, `aria-controls`, `aria-activedescendant`
+- [x] Support Arrow Up / Down, Enter, Escape
+- [x] Announce result count and active option changes
+- [x] Return focus appropriately after close
 
 ### Validation
-- [ ] Admin and public search inputs behave consistently
-- [ ] Inline search selection navigates correctly
-- [ ] Highlight is visible long enough to confirm the target
-- [ ] Existing filter/search behavior does not regress
+- [x] Admin and public search inputs behave consistently
+- [x] Inline search selection navigates correctly
+- [x] Highlight is visible long enough to confirm the target
+- [x] Existing filter/search behavior does not regress
 
 ### Exit Criteria
-- [ ] Search consistency requirement is complete
+- [x] Search consistency requirement is complete
 
 ---
 
@@ -316,21 +316,21 @@ Make search behavior consistent in both calendars and complete the inline + moda
 Complete modal back-gesture support and swipe navigation in both calendars.
 
 ### Tasks
-- [ ] Verify search modal closes via mobile back gesture in public calendar
-- [ ] Verify search modal closes via mobile back gesture in admin calendar
-- [ ] Verify event details modal closes via mobile back gesture in public calendar
-- [ ] Ensure swipe right triggers next period
-- [ ] Ensure swipe left triggers previous period
-- [ ] Prevent swipe conflicts with vertical scroll
-- [ ] Prevent swipe conflicts with interactive content
-- [ ] Use the same behavior thresholds in both apps
+- [x] Verify search modal closes via mobile back gesture in public calendar
+- [x] Verify search modal closes via mobile back gesture in admin calendar
+- [x] Verify event details modal closes via mobile back gesture in public calendar
+- [x] Ensure swipe left triggers next period
+- [x] Ensure swipe right triggers previous period
+- [x] Prevent swipe conflicts with vertical scroll (threshold: absX ≥ 70, ratio 1.3)
+- [x] Prevent swipe conflicts with interactive content (button/a/input/select/textarea guard)
+- [x] Use the same behavior thresholds in both apps
 
 ### Validation
-- [ ] Gesture behavior matches arrow-button behavior
-- [ ] Existing keyboard/mouse behavior is unaffected
+- [x] Gesture behavior matches arrow-button behavior
+- [x] Existing keyboard/mouse behavior is unaffected
 
 ### Exit Criteria
-- [ ] Mobile gesture requirements are complete
+- [x] Mobile gesture requirements are complete
 
 ---
 

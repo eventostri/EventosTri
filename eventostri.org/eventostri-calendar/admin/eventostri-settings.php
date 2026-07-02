@@ -26,6 +26,10 @@ function eventostri_calendar_default_labels() {
         'import_csv' => __('Importar CSV', 'eventostri-calendar'),
         'export_csv' => __('Exportar CSV', 'eventostri-calendar'),
         'delete_past' => __('Eliminar eventos pasados', 'eventostri-calendar'),
+        'verify_session' => __('Verificar sesión', 'eventostri-calendar'),
+        'save' => __('Guardar', 'eventostri-calendar'),
+        'delete' => __('Eliminar', 'eventostri-calendar'),
+        'cancel' => __('Cancelar', 'eventostri-calendar'),
     );
 }
 
@@ -383,6 +387,11 @@ function eventostri_render_calendar_settings_page() {
                         <p><label><?php echo esc_html__('Importar CSV', 'eventostri-calendar'); ?><br><input type="text" class="regular-text" name="eventostri_calendar_labels[import_csv]" value="<?php echo esc_attr($labels['import_csv']); ?>"></label></p>
                         <p><label><?php echo esc_html__('Exportar CSV', 'eventostri-calendar'); ?><br><input type="text" class="regular-text" name="eventostri_calendar_labels[export_csv]" value="<?php echo esc_attr($labels['export_csv']); ?>"></label></p>
                         <p><label><?php echo esc_html__('Eliminar eventos pasados', 'eventostri-calendar'); ?><br><input type="text" class="regular-text" name="eventostri_calendar_labels[delete_past]" value="<?php echo esc_attr($labels['delete_past']); ?>"></label></p>
+                        <hr style="margin:12px 0;" />
+                        <p><label><?php echo esc_html__('Verificar sesión', 'eventostri-calendar'); ?><br><input type="text" class="regular-text" name="eventostri_calendar_labels[verify_session]" value="<?php echo esc_attr($labels['verify_session']); ?>"></label></p>
+                        <p><label><?php echo esc_html__('Guardar', 'eventostri-calendar'); ?><br><input type="text" class="regular-text" name="eventostri_calendar_labels[save]" value="<?php echo esc_attr($labels['save']); ?>"></label></p>
+                        <p><label><?php echo esc_html__('Eliminar', 'eventostri-calendar'); ?><br><input type="text" class="regular-text" name="eventostri_calendar_labels[delete]" value="<?php echo esc_attr($labels['delete']); ?>"></label></p>
+                        <p><label><?php echo esc_html__('Cancelar', 'eventostri-calendar'); ?><br><input type="text" class="regular-text" name="eventostri_calendar_labels[cancel]" value="<?php echo esc_attr($labels['cancel']); ?>"></label></p>
                     </td>
                 </tr>
 
