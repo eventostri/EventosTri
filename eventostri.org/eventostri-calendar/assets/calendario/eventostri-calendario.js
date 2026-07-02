@@ -20,9 +20,11 @@
     let omitirSiguientePopstateModal = false;
     let swipeNavegacionInicializada = false;
     const CLAVE_ANALITICA_BUSQUEDA = '__eventostriSearchAnalytics';
-    const urlJSON = (window.eventostriCalendarioConfig && window.eventostriCalendarioConfig.eventosUrl)
-        ? window.eventostriCalendarioConfig.eventosUrl
-        : '/wp-json/eventostri/v1/eventos';
+    const calendarioConfig = window.eventostriCalendarioConfig || {};
+    const calendarioRestConfig = calendarioConfig.rest || {};
+    const calendarioSettingsConfig = calendarioConfig.settings || {};
+    const defaultEventImageUrl = String(calendarioSettingsConfig.default_event_image_url || '').trim();
+    const urlJSON = calendarioRestConfig.eventosUrl || calendarioConfig.eventosUrl || '/wp-json/eventostri/v1/eventos';
 
     if (!window.FullCalendar) {
         return;
@@ -90,31 +92,41 @@
     }
 
     function obtenerColorPorTipos(tipos) {
-        const texto = tipos.map(function(tipo) {
-            return tipo.toLowerCase();
-        });
+        return obtenerColorFromResolvedColor(null);
+    }
 
-        if (texto.some(function(tipo) { return tipo.includes('mtb'); })) {
+    function parseColorString(colorString) {
+        if (!colorString || colorString.trim() === '') {
+            return { backgroundColor: '#95E1D3', borderColor: '#76B8B0', textColor: '#ffffff' };
+        }
+        
+        const parts = colorString.split(',').map(c => c.trim());
+        
+        if (parts.length === 3) {
             return {
-                backgroundColor: '#ffe2d7',
-                borderColor: '#f5a283',
-                textColor: '#9a3f1f'
+                backgroundColor: parts[0] || '#95E1D3',
+                borderColor: parts[1] || '#76B8B0',
+                textColor: parts[2] || '#ffffff'
+            };
+        } else if (parts.length === 1 && parts[0]) {
+            return {
+                backgroundColor: parts[0],
+                borderColor: parts[0],
+                textColor: '#ffffff'
             };
         }
+        
+        return { backgroundColor: '#95E1D3', borderColor: '#76B8B0', textColor: '#ffffff' };
+    }
 
-        if (texto.some(function(tipo) { return tipo.includes('running'); })) {
-            return {
-                backgroundColor: '#dfeeff',
-                borderColor: '#86b9ff',
-                textColor: '#0d4c9a'
-            };
+    function obtenerColorFromResolvedColor(resolvedColor) {
+        if (!resolvedColor || resolvedColor.trim() === '') {
+            const config = (window.eventostriCalendarioConfig && window.eventostriCalendarioConfig.settings && window.eventostriCalendarioConfig.settings.tipo_colors) 
+                ? window.eventostriCalendarioConfig.settings.tipo_colors 
+                : {};
+            resolvedColor = config.default_color || '#95E1D3,#76B8B0,#ffffff';
         }
-
-        return {
-            backgroundColor: '#ece8ff',
-            borderColor: '#b6a7ff',
-            textColor: '#5a45c7'
-        };
+        return parseColorString(resolvedColor);
     }
 
     function detectarFecha(evento) {
@@ -418,6 +430,7 @@
 
     function mostrarDetalleEvento(evento) {
         const modal = crearModalEvento();
+        const imageWrap = modal.querySelector('.evento-modal-image-wrap');
         const imagen = modal.querySelector('.evento-modal-image');
         const titulo = modal.querySelector('.evento-modal-title');
         const lugar = modal.querySelector('.evento-modal-place');
@@ -436,6 +449,8 @@
         const inscripcionUrl = (datos.inscripcionesonline || datos.inscripciononline || '').trim();
         const whatsappTexto = (datos.whatsapp || '').trim();
         const imagenUrl = (datos.imagen || '').trim();
+        const imagenResuelta = (datos.resolvedImage || datos.resolvedimage || '').trim();
+        const imagenFinal = imagenUrl || imagenResuelta || defaultEventImageUrl;
         const tituloTexto = datos.titulo || evento.title || 'Evento deportivo';
         const lugarBase = (datos.lugar || '').trim();
         const estadoBase = (datos.estado || '').trim();
@@ -450,12 +465,14 @@
         descripcion.textContent = descripcionTexto || '';
         descripcionBlock.style.display = descripcionTexto ? '' : 'none';
 
-        if (imagenUrl) {
-            imagen.src = imagenUrl;
+        if (imagenFinal) {
+            imagen.src = imagenFinal;
             imagen.style.display = 'block';
+            imageWrap.style.display = '';
         } else {
             imagen.removeAttribute('src');
             imagen.style.display = 'none';
+            imageWrap.style.display = 'none';
         }
 
         distancias.innerHTML = '';
@@ -1210,7 +1227,9 @@
             eventTimeFormat: { hour: 'numeric', minute: '2-digit', meridiem: false, hour12: false, omitZeroMinute: true },
             events: eventosMapeados,
             eventDidMount: function(info) {
-                const colores = obtenerColorPorTipos(info.event.extendedProps && info.event.extendedProps.tipos ? info.event.extendedProps.tipos : []);
+                const extendedProps = info.event.extendedProps || {};
+                const resolvedColor = extendedProps.resolvedColor || extendedProps.ResolvedColor || '';
+                const colores = obtenerColorFromResolvedColor(resolvedColor);
                 const el = info.el;
                 if (!el) return;
                 el.style.backgroundColor = colores.backgroundColor;
@@ -1257,11 +1276,13 @@
             const estado = obtenerPropiedad(evento, 'estado');
             const distancias = obtenerPropiedad(evento, 'distancias');
             const imagen = obtenerPropiedad(evento, 'imagen');
+            const imagenResuelta = obtenerPropiedad(evento, 'resolvedimage');
             const descripcion = obtenerPropiedad(evento, 'descripcion');
             const inscripcionOnLine = obtenerPropiedad(evento, 'inscripciononline');
             const whatsapp = obtenerPropiedad(evento, 'whatsapp');
             const tiposArray = obtenerTiposArray(evento);
-            const colores = obtenerColorPorTipos(tiposArray);
+            const resolvedColor = obtenerPropiedad(evento, 'resolvedcolor') || obtenerPropiedad(evento, 'ResolvedColor') || '';
+            const colores = obtenerColorFromResolvedColor(resolvedColor);
             const claveBusqueda = construirClaveEvento(evento);
             const claveBusquedaId = encodeURIComponent(claveBusqueda);
 
@@ -1281,6 +1302,8 @@
                     estado: estado,
                     distancias: distancias,
                     imagen: imagen,
+                    resolvedImage: imagenResuelta,
+                    ResolvedColor: resolvedColor,
                     descripcion: descripcion,
                     inscripciononline: inscripcionOnLine,
                     inscripcionesonline: inscripcionOnLine,
@@ -1309,4 +1332,3 @@
         forzarRecalculoTamanoCalendario();
     }
 })();
-

@@ -7,6 +7,10 @@ function eventostri_calendar_default_branding_image_url() {
     return 'https://eventostri.org/wp-content/uploads/2026/01/cropped-eventostriicon.png';
 }
 
+function eventostri_calendar_default_event_image_url() {
+    return eventostri_calendar_default_branding_image_url();
+}
+
 function eventostri_calendar_default_colors() {
     return array(
         'primary_color' => '#0b5fff',
@@ -25,71 +29,215 @@ function eventostri_calendar_default_labels() {
     );
 }
 
-function eventostri_calendar_get_colors() {
-    $defaults = eventostri_calendar_default_colors();
-    $raw = get_option('eventostri_calendar_colors', '');
+function eventostri_calendar_default_tipo_colors() {
+    return array(
+        'tipos' => array(
+            array('name' => 'MTB', 'color' => '#FF6B6B,#CC5555,#ffffff'),
+            array('name' => 'Running', 'color' => '#4ECDC4,#39a399,#ffffff'),
+            array('name' => '', 'color' => ''),
+            array('name' => '', 'color' => ''),
+            array('name' => '', 'color' => ''),
+        ),
+        'default_color' => '#95E1D3,#76B8B0,#ffffff',
+    );
+}
 
-    if (is_string($raw) && $raw !== '') {
-        $decoded = json_decode($raw, true);
+function eventostri_calendar_resolve_colors($value) {
+    $defaults = eventostri_calendar_default_colors();
+
+    if (is_string($value) && $value !== '') {
+        $decoded = json_decode($value, true);
         if (is_array($decoded)) {
-            return wp_parse_args($decoded, $defaults);
+            $value = $decoded;
         }
     }
 
-    if (is_array($raw)) {
-        return wp_parse_args($raw, $defaults);
+    if (!is_array($value)) {
+        $value = array();
     }
 
-    return $defaults;
+    $resolved = array();
+    foreach ($defaults as $key => $default) {
+        $candidate = isset($value[$key]) ? sanitize_hex_color($value[$key]) : '';
+        $resolved[$key] = $candidate ? $candidate : $default;
+    }
+
+    return $resolved;
+}
+
+function eventostri_calendar_resolve_labels($value) {
+    $defaults = eventostri_calendar_default_labels();
+
+    if (!is_array($value)) {
+        $value = array();
+    }
+
+    $resolved = array();
+    foreach ($defaults as $key => $default) {
+        $candidate = isset($value[$key]) ? sanitize_text_field($value[$key]) : '';
+        $resolved[$key] = $candidate !== '' ? $candidate : $default;
+    }
+
+    return $resolved;
+}
+
+function eventostri_calendar_resolve_logo_url($value) {
+    $resolved = esc_url_raw(trim((string) $value));
+    if ($resolved === '') {
+        return eventostri_calendar_default_branding_image_url();
+    }
+
+    return $resolved;
+}
+
+function eventostri_calendar_get_colors() {
+    return eventostri_calendar_resolve_colors(get_option('eventostri_calendar_colors', ''));
 }
 
 function eventostri_calendar_get_labels() {
-    $defaults = eventostri_calendar_default_labels();
-    $raw = get_option('eventostri_calendar_labels', array());
-    if (!is_array($raw)) {
-        $raw = array();
-    }
-    return wp_parse_args($raw, $defaults);
+    return eventostri_calendar_resolve_labels(get_option('eventostri_calendar_labels', array()));
 }
 
 function eventostri_calendar_get_logo_url() {
-    $stored = trim((string) get_option('eventostri_calendar_background_image', ''));
-    if ($stored === '') {
-        return eventostri_calendar_default_branding_image_url();
+    return eventostri_calendar_resolve_logo_url(get_option('eventostri_calendar_background_image', ''));
+}
+
+function eventostri_calendar_get_default_event_image_url() {
+    $stored = get_option('eventostri_calendar_default_event_image', '');
+    $resolved = esc_url_raw(trim((string) $stored));
+    if ($resolved === '') {
+        return eventostri_calendar_default_event_image_url();
     }
-    return $stored;
+
+    return $resolved;
+}
+
+function eventostri_calendar_resolve_event_image_url($event_image_url) {
+    $event_image = esc_url_raw(trim((string) $event_image_url));
+    if ($event_image !== '') {
+        return $event_image;
+    }
+
+    return eventostri_calendar_get_default_event_image_url();
+}
+
+function eventostri_sanitize_tipo_color_value($color) {
+    $color = sanitize_text_field(trim((string) $color));
+    if ($color === '') {
+        return '';
+    }
+
+    $parts = array_map('trim', explode(',', $color));
+
+    if (count($parts) === 3) {
+        $bg     = sanitize_hex_color($parts[0]);
+        $border = sanitize_hex_color($parts[1]);
+        $text   = sanitize_hex_color($parts[2]);
+        if ($bg && $border && $text) {
+            return $bg . ',' . $border . ',' . $text;
+        }
+        return $bg ?: '';
+    }
+
+    if (count($parts) === 1) {
+        return sanitize_hex_color($parts[0]) ?: '';
+    }
+
+    return '';
+}
+
+function eventostri_calendar_resolve_tipo_colors($value) {
+    $defaults = eventostri_calendar_default_tipo_colors();
+
+    if (is_string($value) && $value !== '') {
+        $decoded = json_decode($value, true);
+        if (is_array($decoded)) {
+            $value = $decoded;
+        }
+    }
+
+    if (!is_array($value)) {
+        $value = array();
+    }
+
+    $tipos = isset($value['tipos']) && is_array($value['tipos']) ? $value['tipos'] : array();
+    $resolved_tipos = array();
+
+    foreach ($defaults['tipos'] as $index => $default_tipo) {
+        $tipo_entry = isset($tipos[$index]) ? $tipos[$index] : array();
+        $name = isset($tipo_entry['name']) ? sanitize_text_field(trim((string) $tipo_entry['name'])) : '';
+        $color = isset($tipo_entry['color']) ? eventostri_sanitize_tipo_color_value($tipo_entry['color']) : '';
+
+        if ($name !== '' && $color === '') {
+            $color = isset($default_tipo['color']) ? $default_tipo['color'] : '';
+        }
+
+        if ($name !== '') {
+            $resolved_tipos[] = array(
+                'name' => strtolower($name),
+                'color' => $color,
+            );
+        }
+    }
+
+    $default_color = isset($value['default_color']) ? eventostri_sanitize_tipo_color_value($value['default_color']) : '';
+    if ($default_color === '') {
+        $default_color = $defaults['default_color'];
+    }
+
+    return array(
+        'tipos' => $resolved_tipos,
+        'default_color' => $default_color,
+    );
+}
+
+function eventostri_calendar_get_tipo_colors() {
+    $raw = get_option('eventostri_calendar_tipo_colors', '');
+    return eventostri_calendar_resolve_tipo_colors($raw);
+}
+
+function eventostri_calendar_get_resolved_settings() {
+    return array(
+        'branding_image_url' => eventostri_calendar_get_logo_url(),
+        'default_event_image_url' => eventostri_calendar_get_default_event_image_url(),
+        'colors' => eventostri_calendar_get_colors(),
+        'labels' => eventostri_calendar_get_labels(),
+        'tipo_colors' => eventostri_calendar_get_tipo_colors(),
+    );
+}
+
+function eventostri_calendar_get_public_script_config() {
+    return array(
+        'rest' => array(
+            'eventosUrl' => esc_url_raw(rest_url('eventostri/v1/eventos')),
+        ),
+        'settings' => eventostri_calendar_get_resolved_settings(),
+    );
+}
+
+function eventostri_calendar_get_admin_script_config() {
+    return array(
+        'rest' => array(
+            'eventosUrl' => esc_url_raw(rest_url('eventostri/v1/eventos')),
+            'eventosImportUrl' => esc_url_raw(rest_url('eventostri/v1/eventos/import')),
+            'eventosDeletePastUrl' => esc_url_raw(rest_url('eventostri/v1/eventos/delete-past')),
+            'authStatusUrl' => esc_url_raw(rest_url('eventostri/v1/auth-status')),
+        ),
+        'exportCsvUrl' => esc_url_raw(wp_nonce_url(admin_url('admin-post.php?action=eventostri_export_csv'), 'eventostri_export_csv')),
+        'settings' => eventostri_calendar_get_resolved_settings(),
+    );
 }
 
 function eventostri_sanitize_calendar_colors($value) {
-    $defaults = eventostri_calendar_default_colors();
-    $sanitized = array();
-
-    if (!is_array($value)) {
-        $value = array();
-    }
-
-    foreach ($defaults as $key => $default) {
-        $candidate = isset($value[$key]) ? sanitize_hex_color($value[$key]) : '';
-        $sanitized[$key] = $candidate ? $candidate : $default;
-    }
-
-    return wp_json_encode($sanitized, JSON_UNESCAPED_SLASHES);
+    return wp_json_encode(eventostri_calendar_resolve_colors($value), JSON_UNESCAPED_SLASHES);
 }
 
 function eventostri_sanitize_calendar_labels($value) {
-    $defaults = eventostri_calendar_default_labels();
-    $sanitized = array();
+    return eventostri_calendar_resolve_labels($value);
+}
 
-    if (!is_array($value)) {
-        $value = array();
-    }
-
-    foreach ($defaults as $key => $default) {
-        $candidate = isset($value[$key]) ? sanitize_text_field($value[$key]) : '';
-        $sanitized[$key] = $candidate !== '' ? $candidate : $default;
-    }
-
-    return $sanitized;
+function eventostri_sanitize_calendar_tipo_colors($value) {
+    return wp_json_encode(eventostri_calendar_resolve_tipo_colors($value), JSON_UNESCAPED_SLASHES);
 }
 
 function eventostri_register_calendar_settings() {
@@ -100,6 +248,16 @@ function eventostri_register_calendar_settings() {
             'type' => 'string',
             'sanitize_callback' => 'esc_url_raw',
             'default' => eventostri_calendar_default_branding_image_url(),
+        )
+    );
+
+    register_setting(
+        'eventostri_calendar_settings',
+        'eventostri_calendar_default_event_image',
+        array(
+            'type' => 'string',
+            'sanitize_callback' => 'esc_url_raw',
+            'default' => eventostri_calendar_default_event_image_url(),
         )
     );
 
@@ -120,6 +278,16 @@ function eventostri_register_calendar_settings() {
             'type' => 'array',
             'sanitize_callback' => 'eventostri_sanitize_calendar_labels',
             'default' => eventostri_calendar_default_labels(),
+        )
+    );
+
+    register_setting(
+        'eventostri_calendar_settings',
+        'eventostri_calendar_tipo_colors',
+        array(
+            'type' => 'string',
+            'sanitize_callback' => 'eventostri_sanitize_calendar_tipo_colors',
+            'default' => wp_json_encode(eventostri_calendar_default_tipo_colors(), JSON_UNESCAPED_SLASHES),
         )
     );
 }
@@ -156,6 +324,7 @@ function eventostri_render_calendar_settings_page() {
     $colors = eventostri_calendar_get_colors();
     $labels = eventostri_calendar_get_labels();
     $logo = eventostri_calendar_get_logo_url();
+    $default_event_image = eventostri_calendar_get_default_event_image_url();
     $defaults = eventostri_calendar_default_colors();
     ?>
     <div class="wrap">
@@ -175,6 +344,18 @@ function eventostri_render_calendar_settings_page() {
                             <?php echo esc_html__('Recomendado: formato PNG/JPG, minimo 600x600 px, peso menor a 400 KB.', 'eventostri-calendar'); ?>
                         </p>
                         <img id="eventostri_calendar_background_preview" src="<?php echo esc_url($logo); ?>" alt="<?php echo esc_attr__('Vista previa de fondo', 'eventostri-calendar'); ?>" style="margin-top:10px;max-width:180px;height:auto;border:1px solid #ccd0d4;border-radius:8px;padding:6px;background:#fff;" />
+                    </td>
+                </tr>
+
+                <tr>
+                    <th scope="row"><?php echo esc_html__('Imagen por defecto para eventos', 'eventostri-calendar'); ?></th>
+                    <td>
+                        <input type="url" id="eventostri_calendar_default_event_image" name="eventostri_calendar_default_event_image" value="<?php echo esc_attr($default_event_image); ?>" class="regular-text" />
+                        <button type="button" class="button" id="eventostri_select_default_event_image"><?php echo esc_html__('Seleccionar imagen', 'eventostri-calendar'); ?></button>
+                        <p class="description">
+                            <?php echo esc_html__('Se usa cuando un evento no tiene Imagen. Recomendado: JPG/PNG, 1200x630 px, menor a 500 KB.', 'eventostri-calendar'); ?>
+                        </p>
+                        <img id="eventostri_calendar_default_event_preview" src="<?php echo esc_url($default_event_image); ?>" alt="<?php echo esc_attr__('Vista previa de imagen por defecto de eventos', 'eventostri-calendar'); ?>" style="margin-top:10px;max-width:260px;height:auto;border:1px solid #ccd0d4;border-radius:8px;padding:6px;background:#fff;" />
                     </td>
                 </tr>
 
@@ -204,6 +385,41 @@ function eventostri_render_calendar_settings_page() {
                         <p><label><?php echo esc_html__('Eliminar eventos pasados', 'eventostri-calendar'); ?><br><input type="text" class="regular-text" name="eventostri_calendar_labels[delete_past]" value="<?php echo esc_attr($labels['delete_past']); ?>"></label></p>
                     </td>
                 </tr>
+
+                <tr>
+                    <th scope="row"><?php echo esc_html__('Colores por Tipo de evento', 'eventostri-calendar'); ?></th>
+                    <td>
+                        <?php
+                        $tipo_colors = eventostri_calendar_get_tipo_colors();
+                        $tipo_defaults = eventostri_calendar_default_tipo_colors();
+                        ?>
+                        <p style="margin-top:0;"><?php echo esc_html__('Configura hasta 5 tipos de eventos con colores personalizados. Los eventos se colorean por el primer tipo que coincida.', 'eventostri-calendar'); ?></p>
+                        <p style="font-size:12px;color:#666;margin-bottom:10px;"><?php echo esc_html__('Formato de color: fondo,borde,fuente (ej: #FF6B6B,#CC5555,#ffffff)', 'eventostri-calendar'); ?></p>
+                        <fieldset style="border:1px solid #ccd0d4;padding:10px;border-radius:4px;background:#f9f9f9;">
+                            <?php for ($i = 0; $i < 5; $i++): ?>
+                                <?php
+                                $tipo_name = isset($tipo_colors['tipos'][$i]['name']) ? $tipo_colors['tipos'][$i]['name'] : '';
+                                $tipo_color = isset($tipo_colors['tipos'][$i]['color']) ? $tipo_colors['tipos'][$i]['color'] : '';
+                                ?>
+                                <div class="eventostri-tipo-color-row" style="display:flex;gap:10px;margin-bottom:15px;align-items:flex-start;">
+                                    <input type="text" placeholder="<?php echo esc_attr__('Ej: MTB, Running, Natacion', 'eventostri-calendar'); ?>" name="eventostri_calendar_tipo_colors[tipos][<?php echo $i; ?>][name]" value="<?php echo esc_attr($tipo_name); ?>" class="regular-text" style="flex:1;max-width:180px;" />
+                                    <input type="text" class="eventostri-tipo-color-field" placeholder="#FF6B6B,#CC5555,#ffffff" name="eventostri_calendar_tipo_colors[tipos][<?php echo $i; ?>][color]" value="<?php echo esc_attr($tipo_color); ?>" style="flex:1;max-width:250px;" />
+                                    <div class="eventostri-tipo-color-preview" style="flex:0;width:60px;height:40px;border-radius:4px;border:2px solid #ccc;display:flex;align-items:center;justify-content:center;font-weight:bold;font-size:12px;" data-color="<?php echo esc_attr($tipo_color); ?>">
+                                        Evento
+                                    </div>
+                                </div>
+                            <?php endfor; ?>
+                        </fieldset>
+                        <hr style="margin:10px 0;" />
+                        <p><?php echo esc_html__('Color por defecto (para tipos no configurados)', 'eventostri-calendar'); ?></p>
+                        <div class="eventostri-tipo-color-row" style="display:flex;gap:10px;align-items:flex-start;margin-top:5px;">
+                                <input type="text" class="eventostri-tipo-color-field" placeholder="#95E1D3,#76B8B0,#ffffff" name="eventostri_calendar_tipo_colors[default_color]" value="<?php echo esc_attr($tipo_colors['default_color']); ?>" style="flex:1;max-width:250px;" />
+                                <div class="eventostri-tipo-color-preview" style="flex:0;width:60px;height:40px;border-radius:4px;border:2px solid #ccc;display:flex;align-items:center;justify-content:center;font-weight:bold;font-size:12px;" data-color="<?php echo esc_attr($tipo_colors['default_color']); ?>">
+                                    Evento
+                                </div>
+                        </div>
+                    </td>
+                </tr>
             </table>
 
             <?php submit_button(__('Guardar configuracion', 'eventostri-calendar')); ?>
@@ -213,6 +429,8 @@ function eventostri_render_calendar_settings_page() {
     (function($) {
         var $logoInput = $('#eventostri_calendar_background_image');
         var $logoPreview = $('#eventostri_calendar_background_preview');
+        var $defaultEventImageInput = $('#eventostri_calendar_default_event_image');
+        var $defaultEventImagePreview = $('#eventostri_calendar_default_event_preview');
         var $previewChip = $('#eventostri_preview_chip');
         var $colorFields = $('.eventostri-color-field');
 
@@ -236,6 +454,26 @@ function eventostri_render_calendar_settings_page() {
             frame.open();
         });
 
+        $('#eventostri_select_default_event_image').on('click', function(e) {
+            e.preventDefault();
+            var frame = wp.media({
+                title: '<?php echo esc_js(__('Selecciona una imagen por defecto para eventos', 'eventostri-calendar')); ?>',
+                button: { text: '<?php echo esc_js(__('Usar esta imagen', 'eventostri-calendar')); ?>' },
+                multiple: false
+            });
+
+            frame.on('select', function() {
+                var attachment = frame.state().get('selection').first().toJSON();
+                if (!attachment || !attachment.url) {
+                    return;
+                }
+                $defaultEventImageInput.val(attachment.url);
+                $defaultEventImagePreview.attr('src', attachment.url);
+            });
+
+            frame.open();
+        });
+
         function updatePreview() {
             var primary = $('input[name="eventostri_calendar_colors[primary_color]"]').val() || '#0b5fff';
             var accent = $('input[name="eventostri_calendar_colors[accent_color]"]').val() || '#00c2ff';
@@ -247,6 +485,46 @@ function eventostri_render_calendar_settings_page() {
         $colorFields.wpColorPicker({
             change: updatePreview,
             clear: updatePreview
+        });
+
+        // Initialize color pickers for tipo colors
+        function updateTipoColorPreview($input) {
+            var $row = $input.closest('.eventostri-tipo-color-row');
+            var $preview = $row.find('.eventostri-tipo-color-preview').first();
+            if ($preview.length === 0) return;
+            
+            var colorValue = $input.val();
+            $preview.data('color', colorValue);
+            
+            if (!colorValue || colorValue.trim() === '') {
+                $preview.css({
+                    backgroundColor: '#95E1D3',
+                    borderColor: '#76B8B0',
+                    color: '#ffffff'
+                });
+                return;
+            }
+            
+            var parts = colorValue.split(',').map(function(c) { return c.trim(); });
+            var bgColor = (parts[0] && parts[0].match(/^#[0-9A-F]{6}$/i)) ? parts[0] : '#95E1D3';
+            var borderColor = (parts[1] && parts[1].match(/^#[0-9A-F]{6}$/i)) ? parts[1] : '#76B8B0';
+            var textColor = (parts[2] && parts[2].match(/^#[0-9A-F]{6}$/i)) ? parts[2] : '#ffffff';
+            
+            $preview.css({
+                backgroundColor: bgColor,
+                borderColor: borderColor,
+                color: textColor
+            });
+        }
+        
+        var $tipoColorFields = $('.eventostri-tipo-color-field');
+        
+        $tipoColorFields.on('input change', function() {
+            updateTipoColorPreview($(this));
+        });
+        
+        $tipoColorFields.each(function() {
+            updateTipoColorPreview($(this));
         });
 
         $('#eventostri_reset_colors').on('click', function(e) {
@@ -266,25 +544,15 @@ function eventostri_render_calendar_settings_page() {
 }
 
 function eventostri_print_calendar_custom_css_variables() {
-    $colors = eventostri_calendar_get_colors();
-    $logo = eventostri_calendar_get_logo_url();
-
-    $primary = sanitize_hex_color($colors['primary_color']);
-    $accent = sanitize_hex_color($colors['accent_color']);
-    $secondary = sanitize_hex_color($colors['secondary_color']);
-    $bg = sanitize_hex_color($colors['bg_color']);
-
-    $primary = $primary ? $primary : '#0b5fff';
-    $accent = $accent ? $accent : '#00c2ff';
-    $secondary = $secondary ? $secondary : '#ff7a59';
-    $bg = $bg ? $bg : '#eef6ff';
-    $logo = $logo ? esc_url_raw($logo) : eventostri_calendar_default_branding_image_url();
+    $settings = eventostri_calendar_get_resolved_settings();
+    $colors = $settings['colors'];
+    $logo = $settings['branding_image_url'];
 
     echo '<style id="eventostri-theme-custom-vars">:root{';
-    echo '--primary-color:' . esc_attr($primary) . ';';
-    echo '--accent-color:' . esc_attr($accent) . ';';
-    echo '--secondary-color:' . esc_attr($secondary) . ';';
-    echo '--bg-color:' . esc_attr($bg) . ';';
+    echo '--primary-color:' . esc_attr($colors['primary_color']) . ';';
+    echo '--accent-color:' . esc_attr($colors['accent_color']) . ';';
+    echo '--secondary-color:' . esc_attr($colors['secondary_color']) . ';';
+    echo '--bg-color:' . esc_attr($colors['bg_color']) . ';';
     echo '--calendar-logo:url("' . esc_url($logo) . '");';
     echo '}</style>';
 }

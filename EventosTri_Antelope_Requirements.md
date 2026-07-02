@@ -36,6 +36,7 @@ EventosTri_Antelope is a dedicated effort to extend the EventosTri calendar plat
 - [ ] Store image URL in WordPress options (`eventostri_calendar_background_image`)
 - [ ] Update CSS to load image from option instead of hardcoded URL
 - [ ] Fallback to default EventosTri logo if no image configured
+- [ ] In Public Calendar, if the Imagen field is empty, show a default image from a configurable URL
 - [ ] Add help text explaining recommended image specifications (dimensions, file size)
 
 #### Technical Details
@@ -80,6 +81,9 @@ add_option_page(
 - [ ] Generate dynamic `<style>` block with CSS variables
 - [ ] Preview colors in real-time on settings page
 - [ ] Reset to defaults option
+- [ ] In both calendars, replace hardcoded event background colors by `Tipo` with configurable colors
+- [ ] Support up to 5 configurable `Tipo` color values
+- [ ] Provide one default color when the event `Tipo` is not in the configured list
 
 #### Technical Details
 
@@ -420,6 +424,7 @@ add_option_page(
 - [ ] Defer non-critical JavaScript
 - [ ] Minify/compress CSS and JS
 - [ ] Monitor Core Web Vitals (LCP, FID, CLS)
+- [ ] In Admin Calendar, on insert/update/delete operations only update the affected event card(s) in the DOM instead of re-fetching and re-rendering the full event list
 
 ---
 
@@ -523,8 +528,6 @@ add_option_page(
 **Last Updated**: 2026-06-25  
 **Next Review**: 2026-07-01  
 **Repository**: Main EventosTri repo (separate from worktrees)
-
-
 
 
 

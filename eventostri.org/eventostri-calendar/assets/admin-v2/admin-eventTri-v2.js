@@ -1,18 +1,19 @@
-(function() {
+﻿(function() {
   if (window.__eventosAdminV2Inicializado) {
     return;
   }
   window.__eventosAdminV2Inicializado = true;
 
-  const apiEventosUrl = '/wp-json/eventostri/v1/eventos';
-  const apiSyncUrl = '/wp-json/eventostri/v1/eventos/sync';
-  const apiAuthStatusUrl = '/wp-json/eventostri/v1/auth-status';
-  const apiExportCsvUrl = (window.eventostriAdminV2Config && window.eventostriAdminV2Config.exportCsvUrl)
-    ? window.eventostriAdminV2Config.exportCsvUrl
-    : '';
-  const etiquetaNuevoEvento = (window.eventostriAdminV2Config && window.eventostriAdminV2Config.labels && window.eventostriAdminV2Config.labels.newEvent)
-    ? window.eventostriAdminV2Config.labels.newEvent
-    : 'Nuevo evento';
+  const adminConfig = window.eventostriAdminV2Config || {};
+  const adminRestConfig = adminConfig.rest || {};
+  const adminSettingsConfig = adminConfig.settings || {};
+  const adminLabelsConfig = adminSettingsConfig.labels || adminConfig.labels || {};
+  const apiEventosUrl = adminRestConfig.eventosUrl || '/wp-json/eventostri/v1/eventos';
+  const apiEventosImportUrl = adminRestConfig.eventosImportUrl || '/wp-json/eventostri/v1/eventos/import';
+  const apiEventosDeletePastUrl = adminRestConfig.eventosDeletePastUrl || '/wp-json/eventostri/v1/eventos/delete-past';
+  const apiAuthStatusUrl = adminRestConfig.authStatusUrl || '/wp-json/eventostri/v1/auth-status';
+  const apiExportCsvUrl = adminConfig.exportCsvUrl || '';
+  const etiquetaNuevoEvento = adminLabelsConfig.new_event || adminLabelsConfig.newEvent || 'Nuevo evento';
 
   let eventos = [];
   let calendarioInstancia = null;
@@ -159,6 +160,61 @@
     return '';
   }
 
+  function construirUrlEventoPorId(id) {
+    return apiEventosUrl + '/' + encodeURIComponent(String(id));
+  }
+
+  async function enviarSolicitudJsonAutenticada(url, opciones = {}, mensajeError) {
+    const estado = await verificarSesionWordPressAPI(true);
+    if (!estado.autenticado || !estado.puedeGuardar) {
+      registrarLog('Bloqueado guardado por sesion/permisos: ' + estado.detalle, 'warning');
+      actualizarBanderaSesionUI();
+      return null;
+    }
+
+    const headers = Object.assign({}, opciones.headers || {});
+    const nonce = obtenerNonceRest();
+    if (nonce) {
+      headers['X-WP-Nonce'] = nonce;
+    }
+    if (!Object.prototype.hasOwnProperty.call(headers, 'Content-Type') && opciones.body !== undefined) {
+      headers['Content-Type'] = 'application/json';
+    }
+
+    sincronizacionEnCurso = true;
+    try {
+      const respuesta = await fetch(url, Object.assign({}, opciones, {
+        credentials: 'same-origin',
+        headers: headers
+      }));
+
+      if (!respuesta.ok) {
+        if (respuesta.status === 401 || respuesta.status === 403) {
+          throw new Error('No autorizado para guardar. Inicia sesion y verifica nonce REST.');
+        }
+        throw new Error((mensajeError || 'Error en la solicitud') + '. HTTP ' + respuesta.status);
+      }
+
+      const texto = await respuesta.text();
+      if (!texto) {
+        return { ok: true };
+      }
+
+      const data = JSON.parse(texto);
+      if (!data || data.ok !== true) {
+        throw new Error('La API respondio sin confirmar la operacion.');
+      }
+
+      return data;
+    } catch (err) {
+      registrarLog((mensajeError || 'Error en la solicitud') + ': ' + err.message, 'error');
+      return null;
+    } finally {
+      sincronizacionEnCurso = false;
+      deshabilitarAccionesModal(false);
+    }
+  }
+
   function actualizarBanderaSesionUI() {
     const flag = qs('wpAuthFlagV2');
     const detail = qs('wpAuthDetailsV2');
@@ -284,6 +340,17 @@
     return fallback;
   }
 
+  function normalizarId(valor) {
+    if (valor === null || valor === undefined || valor === '') {
+      return null;
+    }
+    const numero = parseInt(valor, 10);
+    if (Number.isNaN(numero) || numero <= 0) {
+      return null;
+    }
+    return numero;
+  }
+
   function esEventoPasado(evento) {
     const fechaPlano = String(evento.Fecha_Hora || '').split(/[T ]/)[0];
     const partes = fechaPlano.split('-');
@@ -296,8 +363,10 @@
   }
 
   function crearEventoNormalizado(origen = {}) {
+    const id = normalizarId(obtenerPropiedad(origen, 'Id'));
     return {
-      _localId: origen._localId || crypto.randomUUID(),
+      Id: id,
+      _localId: origen._localId || (id !== null ? ('wp-' + id) : crypto.randomUUID()),
       Titulo: String(obtenerPropiedad(origen, 'Titulo') || 'Evento deportivo').trim(),
       Fecha_Hora: String(obtenerPropiedad(origen, 'Fecha_Hora') || '').trim(),
       Lugar: String(obtenerPropiedad(origen, 'Lugar') || '').trim(),
@@ -309,9 +378,75 @@
       Organizador: String(obtenerPropiedad(origen, 'Organizador') || '').trim(),
       Whatsapp: normalizarWhatsapp(obtenerPropiedad(origen, 'Whatsapp') || ''),
       Imagen: String(obtenerPropiedad(origen, 'Imagen') || '').trim(),
+      ResolvedColor: String(obtenerPropiedad(origen, 'ResolvedColor') || '').trim(),
       Descripcion: String(obtenerPropiedad(origen, 'Descripcion') || '').trim(),
       VisibleEnCalendario: normalizarBoolean(obtenerPropiedad(origen, 'VisibleEnCalendario'), false)
     };
+  }
+
+  function obtenerIdEvento(evento) {
+    return normalizarId(obtenerPropiedad(evento, 'Id'));
+  }
+
+  function obtenerClaveEventoCalendario(evento) {
+    const id = obtenerIdEvento(evento);
+    return id !== null ? String(id) : String(evento._localId || '');
+  }
+
+  function encontrarIndiceEventoPorId(id) {
+    const normalizado = normalizarId(id);
+    if (normalizado === null) {
+      return -1;
+    }
+    return eventos.findIndex(ev => ev.Id === normalizado);
+  }
+
+  function buscarEventoPorClaveCalendario(clave) {
+    return eventos.find(ev => obtenerClaveEventoCalendario(ev) === String(clave));
+  }
+
+  function guardarEventoLocal(evento) {
+    const normalizado = crearEventoNormalizado(evento);
+    const index = normalizado.Id !== null
+      ? encontrarIndiceEventoPorId(normalizado.Id)
+      : eventos.findIndex(ev => ev._localId === normalizado._localId);
+    const anterior = index >= 0 ? eventos[index] : null;
+
+    if (index >= 0) {
+      eventos[index] = normalizado;
+    } else {
+      eventos.push(normalizado);
+    }
+
+    return { evento: normalizado, anterior: anterior };
+  }
+
+  function serializarEventoParaApi(ev) {
+    return {
+      Titulo: ev.Titulo,
+      Fecha_Hora: ev.Fecha_Hora,
+      Lugar: ev.Lugar,
+      Estado: ev.Estado,
+      Tipos: ev.Tipos,
+      Distancias: ev.Distancias,
+      Link: ev.Link,
+      InscripcionOnLine: ev.InscripcionOnLine,
+      Organizador: ev.Organizador,
+      Whatsapp: ev.Whatsapp,
+      Imagen: ev.Imagen,
+      Descripcion: ev.Descripcion,
+      VisibleEnCalendario: Boolean(ev.VisibleEnCalendario)
+    };
+  }
+
+  function requiereRegenerarFiltros(eventoAnterior, eventoActual) {
+    if (!eventoAnterior || !eventoActual) {
+      return true;
+    }
+
+    return String(eventoAnterior.Tipos || '').trim() !== String(eventoActual.Tipos || '').trim() ||
+      String(eventoAnterior.Lugar || '').trim() !== String(eventoActual.Lugar || '').trim() ||
+      Boolean(eventoAnterior.VisibleEnCalendario) !== Boolean(eventoActual.VisibleEnCalendario);
   }
 
   function obtenerTiposArray(evento) {
@@ -352,26 +487,41 @@
   }
 
   function obtenerColorPorTipos(tipos) {
-    const texto = tipos.map(t => t.toLowerCase());
-    if (texto.some(t => t.includes('mtb'))) {
+    return obtenerColorFromResolvedColor(null);
+  }
+
+  function parseColorString(colorString) {
+    if (!colorString || colorString.trim() === '') {
+      return { backgroundColor: '#95E1D3', borderColor: '#76B8B0', textColor: '#ffffff' };
+    }
+    
+    const parts = colorString.split(',').map(c => c.trim());
+    
+    if (parts.length === 3) {
       return {
-        backgroundColor: '#ffe2d7',
-        borderColor: '#f5a283',
-        textColor: '#9a3f1f'
+        backgroundColor: parts[0] || '#95E1D3',
+        borderColor: parts[1] || '#76B8B0',
+        textColor: parts[2] || '#ffffff'
+      };
+    } else if (parts.length === 1 && parts[0]) {
+      return {
+        backgroundColor: parts[0],
+        borderColor: parts[0],
+        textColor: '#ffffff'
       };
     }
-    if (texto.some(t => t.includes('running'))) {
-      return {
-        backgroundColor: '#dfeeff',
-        borderColor: '#86b9ff',
-        textColor: '#0d4c9a'
-      };
+    
+    return { backgroundColor: '#95E1D3', borderColor: '#76B8B0', textColor: '#ffffff' };
+  }
+
+  function obtenerColorFromResolvedColor(resolvedColor) {
+    if (!resolvedColor || resolvedColor.trim() === '') {
+      const config = (window.eventostriAdminV2Config && window.eventostriAdminV2Config.settings && window.eventostriAdminV2Config.settings.tipo_colors) 
+        ? window.eventostriAdminV2Config.settings.tipo_colors 
+        : {};
+      resolvedColor = config.default_color || '#95E1D3,#76B8B0,#ffffff';
     }
-    return {
-      backgroundColor: '#ece8ff',
-      borderColor: '#b6a7ff',
-      textColor: '#5a45c7'
-    };
+    return parseColorString(resolvedColor);
   }
 
   function normalizarTextoBusqueda(valor) {
@@ -465,44 +615,93 @@
     });
   }
 
+  function eventoPasaFiltros(ev) {
+    const tipos = obtenerTiposArray(ev).map(v => v.toLowerCase());
+    const lugar = String(ev.Lugar || '').toLowerCase();
+    const titulo = String(ev.Titulo || '').toLowerCase();
+
+    const pasaTipo = filtrosTipoSeleccionados.size === 0 || Array.from(filtrosTipoSeleccionados)
+      .some(f => tipos.includes(f.toLowerCase()));
+    const pasaLugar = filtrosLugarSeleccionados.size === 0 || Array.from(filtrosLugarSeleccionados)
+      .some(f => lugar === f.toLowerCase());
+    const pasaBusqueda = terminoBusquedaAdmin === '' || titulo.includes(terminoBusquedaAdmin);
+
+    return pasaTipo && pasaLugar && pasaBusqueda;
+  }
+
   function obtenerEventosFiltrados() {
-    return eventos.filter(ev => {
-      const tipos = obtenerTiposArray(ev).map(v => v.toLowerCase());
-      const lugar = String(ev.Lugar || '').toLowerCase();
-      const titulo = String(ev.Titulo || '').toLowerCase();
+    return eventos.filter(eventoPasaFiltros);
+  }
 
-      const pasaTipo = filtrosTipoSeleccionados.size === 0 || Array.from(filtrosTipoSeleccionados)
-        .some(f => tipos.includes(f.toLowerCase()));
-      const pasaLugar = filtrosLugarSeleccionados.size === 0 || Array.from(filtrosLugarSeleccionados)
-        .some(f => lugar === f.toLowerCase());
-      const pasaBusqueda = terminoBusquedaAdmin === '' || titulo.includes(terminoBusquedaAdmin);
+  function mapearEventoParaCalendario(ev) {
+    const tiposArray = obtenerTiposArray(ev);
+    const resolvedColor = ev.ResolvedColor || ev.resolvedColor || '';
+    const colores = obtenerColorFromResolvedColor(resolvedColor);
+    const start = (ev.Fecha_Hora || '').trim();
+    if (!start) {
+      return null;
+    }
 
-      return pasaTipo && pasaLugar && pasaBusqueda;
-    });
+    return {
+      id: obtenerClaveEventoCalendario(ev),
+      title: ev.Titulo || 'Evento deportivo',
+      start: start,
+      allDay: false,
+      backgroundColor: colores.backgroundColor,
+      borderColor: colores.borderColor,
+      textColor: colores.textColor,
+      extendedProps: {
+        ...ev,
+        tipos: tiposArray,
+        ResolvedColor: resolvedColor,
+        fechaFormateada: formatearFecha(ev.Fecha_Hora)
+      }
+    };
   }
 
   function mapearEventosParaCalendario(datos) {
     return datos
-      .map(ev => {
-        const tiposArray = obtenerTiposArray(ev);
-        const colores = obtenerColorPorTipos(tiposArray);
+      .map(mapearEventoParaCalendario)
+      .filter(Boolean);
+  }
 
-        return {
-          id: ev._localId,
-          title: ev.Titulo || 'Evento deportivo',
-          start: (ev.Fecha_Hora || '').trim() || null,
-          allDay: false,
-          backgroundColor: colores.backgroundColor,
-          borderColor: colores.borderColor,
-          textColor: colores.textColor,
-          extendedProps: {
-            ...ev,
-            tipos: tiposArray,
-            fechaFormateada: formatearFecha(ev.Fecha_Hora)
-          }
-        };
-      })
-      .filter(e => e.start !== null);
+  function sincronizarEventoEnCalendario(eventoActual, eventoAnterior) {
+    if (!calendarioInstancia) {
+      renderCalendario();
+      return;
+    }
+
+    const claveAnterior = eventoAnterior ? obtenerClaveEventoCalendario(eventoAnterior) : null;
+    const claveActual = obtenerClaveEventoCalendario(eventoActual);
+    const existente = calendarioInstancia.getEventById(claveAnterior || claveActual);
+    if (existente) {
+      existente.remove();
+    }
+
+    if (eventoPasaFiltros(eventoActual)) {
+      const mapeado = mapearEventoParaCalendario(eventoActual);
+      if (mapeado) {
+        calendarioInstancia.addEvent(mapeado);
+      }
+    }
+
+    aplicarDiasOcultosPorMes(obtenerEventosFiltrados());
+    forzarRecalculoTamanoCalendario();
+  }
+
+  function removerEventoDelCalendario(eventoEliminado) {
+    if (!calendarioInstancia) {
+      renderCalendario();
+      return;
+    }
+
+    const existente = calendarioInstancia.getEventById(obtenerClaveEventoCalendario(eventoEliminado));
+    if (existente) {
+      existente.remove();
+    }
+
+    aplicarDiasOcultosPorMes(obtenerEventosFiltrados());
+    forzarRecalculoTamanoCalendario();
   }
 
   function calcularDiasAOcultar(eventosFiltrados, rangoVisible) {
@@ -578,7 +777,7 @@
 
     setTimeout(() => {
       if (!calendarioInstancia) return;
-      const eventoCalendario = calendarioInstancia.getEventById(evento._localId);
+      const eventoCalendario = calendarioInstancia.getEventById(obtenerClaveEventoCalendario(evento));
       if (!eventoCalendario) return;
       const selector = '#calendario-admin-v2 .fc-event[data-event-id="' + escaparParaSelector(eventoCalendario.id) + '"]';
       const elemento = document.querySelector(selector);
@@ -789,7 +988,9 @@
         eventTimeFormat: { hour: 'numeric', minute: '2-digit', meridiem: false, hour12: false, omitZeroMinute: true },
         events: eventosMapeados,
         eventDidMount: function(info) {
-          const colores = obtenerColorPorTipos(info.event.extendedProps?.tipos || []);
+          const extendedProps = info.event.extendedProps || {};
+          const resolvedColor = extendedProps.resolvedColor || extendedProps.ResolvedColor || '';
+          const colores = obtenerColorFromResolvedColor(resolvedColor);
           const el = info.el;
           if (!el) return;
 
@@ -806,7 +1007,7 @@
         },
         eventClick: function(info) {
           info.jsEvent.preventDefault();
-          const local = eventos.find(ev => ev._localId === info.event.id);
+          const local = buscarEventoPorClaveCalendario(info.event.id);
           if (local) {
             abrirModalEvento(local);
           }
@@ -919,14 +1120,15 @@
 
   function abrirModalEvento(evento, creando = false) {
     const normalizado = crearEventoNormalizado(evento);
-    editandoId = creando ? null : normalizado._localId;
+    editandoId = creando ? null : normalizado.Id;
     cargarFormulario(normalizado, creando);
     abrirModal();
   }
 
   function leerEventoDesdeFormulario() {
     return crearEventoNormalizado({
-      _localId: editandoId || crypto.randomUUID(),
+      Id: editandoId,
+      _localId: editandoId ? ('wp-' + editandoId) : crypto.randomUUID(),
       Titulo: qs('fTituloV2').value,
       Fecha_Hora: qs('fFechaV2').value,
       Estado: qs('fEstadoV2').value,
@@ -941,6 +1143,70 @@
       Descripcion: qs('fDescripcionV2').value,
       VisibleEnCalendario: qs('fVisibleEnCalendarioV2').checked
     });
+  }
+
+  async function crearEventoWordPressAPI(evento) {
+    const data = await enviarSolicitudJsonAutenticada(
+      apiEventosUrl,
+      {
+        method: 'POST',
+        body: JSON.stringify(serializarEventoParaApi(evento))
+      },
+      'Error al crear evento en WordPress'
+    );
+
+    if (!data || !data.evento) {
+      registrarLog('La API no devolvio el evento creado.', 'error');
+      return null;
+    }
+
+    registrarLog('Evento agregado: ' + (data.evento.Titulo || evento.Titulo), 'success');
+    return crearEventoNormalizado(data.evento);
+  }
+
+  async function actualizarEventoWordPressAPI(evento) {
+    if (evento.Id === null) {
+      registrarLog('No se puede actualizar un evento sin Id persistido.', 'error');
+      return null;
+    }
+
+    const data = await enviarSolicitudJsonAutenticada(
+      construirUrlEventoPorId(evento.Id),
+      {
+        method: 'PUT',
+        body: JSON.stringify(serializarEventoParaApi(evento))
+      },
+      'Error al actualizar evento en WordPress'
+    );
+
+    if (!data || !data.evento) {
+      registrarLog('La API no devolvio el evento actualizado.', 'error');
+      return null;
+    }
+
+    registrarLog('Evento actualizado: ' + (data.evento.Titulo || evento.Titulo), 'success');
+    return crearEventoNormalizado(data.evento);
+  }
+
+  async function eliminarEventoWordPressAPI(evento) {
+    if (!evento || evento.Id === null) {
+      registrarLog('No se puede eliminar un evento sin Id persistido.', 'error');
+      return null;
+    }
+
+    const data = await enviarSolicitudJsonAutenticada(
+      construirUrlEventoPorId(evento.Id),
+      { method: 'DELETE' },
+      'Error al eliminar evento en WordPress'
+    );
+
+    if (!data || normalizarId(data.deleted_id) === null) {
+      registrarLog('La API no confirmo la eliminacion del evento.', 'error');
+      return null;
+    }
+
+    registrarLog('Evento eliminado: ' + (evento.Titulo || 'evento'), 'warning');
+    return normalizarId(data.deleted_id);
   }
 
   async function guardarEventoDesdeModal(e) {
@@ -963,29 +1229,26 @@
       return;
     }
 
-    if (editandoId) {
-      const index = eventos.findIndex(ev => ev._localId === editandoId);
-      if (index >= 0) {
-        eventos[index] = evento;
-      }
-      registrarLog('Evento actualizado: ' + evento.Titulo, 'success');
-    } else {
-      eventos.push(evento);
-      registrarLog('Evento agregado: ' + evento.Titulo, 'success');
-    }
+    const eventoAnterior = evento.Id !== null
+      ? eventos.find(ev => ev.Id === evento.Id) || null
+      : null;
 
     deshabilitarAccionesModal(true);
-    const sincronizado = await sincronizarEnWordPressAPI();
-    cerrarModal();
+    const guardado = evento.Id !== null
+      ? await actualizarEventoWordPressAPI(evento)
+      : await crearEventoWordPressAPI(evento);
 
-    if (!sincronizado) {
-      registrarLog('Guardado finalizado sin sincronizacion completa.', 'warning');
+    if (!guardado) {
       return;
     }
 
+    const resultado = guardarEventoLocal(guardado);
+    cerrarModal();
     actualizarContador();
-    generarFiltros();
-    renderCalendario();
+    if (!resultado.anterior || requiereRegenerarFiltros(resultado.anterior, resultado.evento)) {
+      generarFiltros();
+    }
+    sincronizarEventoEnCalendario(resultado.evento, resultado.anterior || eventoAnterior);
   }
 
   async function eliminarEventoActual() {
@@ -994,36 +1257,32 @@
       return;
     }
 
-    if (!editandoId) {
+    if (editandoId === null) {
       return;
     }
 
-    const index = eventos.findIndex(ev => ev._localId === editandoId);
+    const index = encontrarIndiceEventoPorId(editandoId);
     if (index < 0) {
       return;
     }
 
-    const nombre = eventos[index].Titulo || 'evento';
+    const eventoActual = eventos[index];
     if (!confirm('¿Deseas eliminar este evento?')) {
       return;
     }
 
-    eventos.splice(index, 1);
-    registrarLog('Evento eliminado: ' + nombre, 'warning');
-
     deshabilitarAccionesModal(true);
-    const sincronizado = await sincronizarEnWordPressAPI();
-    cerrarModal();
-
-    if (!sincronizado) {
-      registrarLog('Eliminacion finalizada sin sincronizacion completa.', 'warning');
+    const deletedId = await eliminarEventoWordPressAPI(eventoActual);
+    if (deletedId === null) {
       return;
     }
 
+    eventos.splice(index, 1);
+    cerrarModal();
     editandoId = null;
     actualizarContador();
     generarFiltros();
-    renderCalendario();
+    removerEventoDelCalendario(eventoActual);
   }
 
   function generarFiltros() {
@@ -1097,6 +1356,24 @@
       String(lugar || '').trim().toLowerCase();
   }
 
+  async function importarEventosWordPressAPI(eventosImportar) {
+    const data = await enviarSolicitudJsonAutenticada(
+      apiEventosImportUrl,
+      {
+        method: 'POST',
+        body: JSON.stringify({ eventos: eventosImportar.map(serializarEventoParaApi) })
+      },
+      'Error al importar eventos en WordPress'
+    );
+
+    if (!data || !Array.isArray(data.eventos)) {
+      registrarLog('La API no devolvio el resultado esperado de importacion.', 'error');
+      return null;
+    }
+
+    return data;
+  }
+
   async function importarCsvAdmin() {
     if (sincronizacionEnCurso) {
       registrarLog('Sincronización en curso. Espera para importar.', 'warning');
@@ -1131,7 +1408,7 @@
     const existentes = new Set(eventos.map(ev => dedupeKeyEvento(ev.Titulo, ev.Fecha_Hora, ev.Lugar)));
     const vistosEnCsv = new Set();
     const lineasDuplicadas = [];
-    let insertados = 0;
+    const eventosAImportar = [];
     let invalidos = 0;
 
     for (let i = 1; i < filas.length; i++) {
@@ -1158,7 +1435,7 @@
       }
 
       vistosEnCsv.add(key);
-      eventos.push(crearEventoNormalizado({
+      eventosAImportar.push(crearEventoNormalizado({
         Titulo: titulo,
         Fecha_Hora: fechaHora,
         Lugar: lugar,
@@ -1175,25 +1452,55 @@
           ? normalizarBoolean(get('VisibleEnCalendario'), false)
           : false
       }));
-      insertados++;
     }
 
-    const sincronizado = await sincronizarEnWordPressAPI();
-    if (!sincronizado) {
+    if (eventosAImportar.length === 0) {
+      registrarLog(
+        'Importación CSV sin nuevos eventos. Duplicados: ' + lineasDuplicadas.length + ' | Inválidos: ' + invalidos,
+        lineasDuplicadas.length > 0 || invalidos > 0 ? 'warning' : 'info'
+      );
+      return;
+    }
+
+    const resultado = await importarEventosWordPressAPI(eventosAImportar);
+    if (!resultado) {
       registrarLog('Importación CSV finalizada sin sincronización completa.', 'warning');
       return;
     }
+
+    resultado.eventos.forEach(item => {
+      guardarEventoLocal(item);
+    });
 
     actualizarContador();
     generarFiltros();
     renderCalendario();
     registrarLog(
-      'Importación CSV completada. Insertados: ' + insertados +
-      ' | Duplicados: ' + lineasDuplicadas.length +
+      'Importación CSV completada. Insertados: ' + (resultado.insertados ?? resultado.eventos.length) +
+      ' | Duplicados cliente: ' + lineasDuplicadas.length +
+      ' | Duplicados servidor: ' + (resultado.omitidos_duplicados ?? 0) +
       ' | Inválidos: ' + invalidos +
       (lineasDuplicadas.length ? ' | Líneas duplicadas: ' + lineasDuplicadas.join(', ') : ''),
-      lineasDuplicadas.length > 0 || invalidos > 0 ? 'warning' : 'success'
+      lineasDuplicadas.length > 0 || invalidos > 0 || (resultado.omitidos_duplicados ?? 0) > 0 ? 'warning' : 'success'
     );
+  }
+
+  async function eliminarEventosPasadosWordPressAPI() {
+    const data = await enviarSolicitudJsonAutenticada(
+      apiEventosDeletePastUrl,
+      {
+        method: 'POST',
+        body: JSON.stringify({})
+      },
+      'Error al eliminar eventos pasados en WordPress'
+    );
+
+    if (!data || !Array.isArray(data.deleted_ids)) {
+      registrarLog('La API no devolvio el resultado esperado para eliminar eventos pasados.', 'error');
+      return null;
+    }
+
+    return data;
   }
 
   async function eliminarEventosPasados() {
@@ -1212,17 +1519,18 @@
       return;
     }
 
-    eventos = eventos.filter(ev => !esEventoPasado(ev));
-    const sincronizado = await sincronizarEnWordPressAPI();
-    if (!sincronizado) {
+    const resultado = await eliminarEventosPasadosWordPressAPI();
+    if (!resultado) {
       registrarLog('Eliminación de pasados finalizada sin sincronización completa.', 'warning');
       return;
     }
 
+    const deletedIds = new Set((resultado.deleted_ids || []).map(id => normalizarId(id)).filter(id => id !== null));
+    eventos = eventos.filter(ev => ev.Id === null || !deletedIds.has(ev.Id));
     actualizarContador();
     generarFiltros();
     renderCalendario();
-    registrarLog('Eventos pasados eliminados: ' + totalPasados, 'success');
+    registrarLog('Eventos pasados eliminados: ' + (resultado.deleted_count ?? deletedIds.size), 'success');
   }
 
   async function cargarDesdeWordPressAPI() {
@@ -1254,82 +1562,7 @@
     }
   }
 
-  async function sincronizarEnWordPressAPI() {
-    if (sincronizacionEnCurso) {
-      registrarLog('Sincronizacion ya en curso. Esperando a que termine...', 'warning');
-      return false;
-    }
-
-    if (eventos.length === 0) {
-      alert('No hay eventos en la lista para subir.');
-      return false;
-    }
-
-    const estado = await verificarSesionWordPressAPI(true);
-    if (!estado.autenticado || !estado.puedeGuardar) {
-      registrarLog('Bloqueado guardado por sesion/permisos: ' + estado.detalle, 'warning');
-      actualizarBanderaSesionUI();
-      return false;
-    }
-
-    const nonce = obtenerNonceRest();
-    const headers = {
-      'Content-Type': 'application/json'
-    };
-
-    if (nonce) {
-      headers['X-WP-Nonce'] = nonce;
-    }
-
-    const payload = eventos.map(ev => ({
-      Titulo: ev.Titulo,
-      Fecha_Hora: ev.Fecha_Hora,
-      Lugar: ev.Lugar,
-      Estado: ev.Estado,
-      Tipos: ev.Tipos,
-      Distancias: ev.Distancias,
-      Link: ev.Link,
-      InscripcionOnLine: ev.InscripcionOnLine,
-      Organizador: ev.Organizador,
-      Whatsapp: ev.Whatsapp,
-      Imagen: ev.Imagen,
-      Descripcion: ev.Descripcion,
-      VisibleEnCalendario: Boolean(ev.VisibleEnCalendario)
-    }));
-
-    sincronizacionEnCurso = true;
-    try {
-      registrarLog('Enviando sincronizacion con ' + payload.length + ' eventos...', 'info');
-      const res = await fetch(apiSyncUrl, {
-        method: 'POST',
-        credentials: 'same-origin',
-        headers: headers,
-        body: JSON.stringify(payload)
-      });
-
-      if (!res.ok) {
-        if (res.status === 401 || res.status === 403) {
-          throw new Error('No autorizado para guardar. Inicia sesion y verifica nonce REST.');
-        }
-        throw new Error('Error al guardar en WordPress. HTTP ' + res.status);
-      }
-
-      const data = await res.json();
-      if (!data || data.ok !== true) {
-        throw new Error('La API respondio sin confirmar la sincronizacion.');
-      }
-
-      registrarLog('Sincronizacion completada. Insertados: ' + (data.insertados ?? 'n/d'), 'success');
-      return true;
-    } catch (err) {
-      registrarLog('Error al sincronizar: ' + err.message, 'error');
-      return false;
-    } finally {
-      sincronizacionEnCurso = false;
-      deshabilitarAccionesModal(false);
-    }
-  }
-
+  
   function vincularEventosUI() {
     const btnCargar = qs('btnCargarApiV2');
     const btnImportarCsv = qs('btnImportarCsvV2');
@@ -1446,3 +1679,8 @@
     init();
   }
 })();
+
+
+
+
+
