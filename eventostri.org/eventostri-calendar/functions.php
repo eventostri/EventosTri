@@ -131,7 +131,21 @@ function eventostri_shortcode_admin_v2() {
 add_shortcode('eventostri_admin_v2', 'eventostri_shortcode_admin_v2');
 
 function eventostri_shortcode_branding_image() {
-    $logo_url = eventostri_calendar_get_logo_url();
+    // Determine if this is the admin calendar page
+    $is_admin_page = false;
+    if (is_page(array('administrar-calendario', 'administrar-calendario-v2'))) {
+        $is_admin_page = true;
+    } elseif (is_singular()) {
+        global $post;
+        if ($post && isset($post->post_content) && has_shortcode($post->post_content, 'eventostri_admin_v2')) {
+            $is_admin_page = true;
+        }
+    }
+    
+    $logo_url = $is_admin_page 
+        ? eventostri_calendar_get_header_image('admin')
+        : eventostri_calendar_get_header_image('public');
+    
     if (!$logo_url) {
         return '';
     }

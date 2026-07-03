@@ -192,18 +192,19 @@
   overflow: hidden;
 }
 
+#calendario-admin-v2 {
+  background-image: var(--calendar-background-image);
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: cover;
+  background-attachment: local;
+}
+
 #calendario-admin-v2::before {
   content: '';
   position: absolute;
-  inset: 50% auto auto 50%;
-  width: 420px;
-  height: 420px;
-  transform: translate(-50%, -50%);
-  background-image: var(--calendar-logo);
-  background-repeat: no-repeat;
-  background-position: center;
-  background-size: contain;
-  opacity: 0.08;
+  inset: 0;
+  background-color: rgba(255, 255, 255, calc(1 - var(--background-opacity)));
   pointer-events: none;
   z-index: 0;
 }
@@ -497,6 +498,15 @@ button {
   #calendario-admin-v2 .fc-button {
     font-size: 0.7rem !important;
     padding: 0.2rem 0.4rem !important;
+  }
+
+  .evento-modal-card {
+    width: calc(100% - 1rem);
+    max-height: 95vh;
+  }
+
+  .evento-modal-overlay {
+    padding: 0.5rem;
   }
 }
 

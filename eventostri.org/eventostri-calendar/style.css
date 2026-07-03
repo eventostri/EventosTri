@@ -22,6 +22,9 @@ Version: 1.0
     --muted-color: #5f6d8d;
     --border-color: #dbe7ff;
     --calendar-logo: url('https://eventostri.org/wp-content/uploads/2026/01/cropped-eventostriicon.png');
+    --calendar-header-image: url('https://eventostri.org/wp-content/uploads/2026/01/cropped-eventostriicon.png');
+    --calendar-background-image: url('https://eventostri.org/wp-content/uploads/2026/01/cropped-eventostriicon.png');
+    --background-opacity: 1;
 }
 
 /* --- Estructura Base --- */
@@ -306,19 +309,21 @@ body {
     overflow: hidden;
 }
 
+#calendario,
+.wrapper-eventos #calendario {
+    background-image: var(--calendar-background-image);
+    background-repeat: no-repeat;
+    background-position: center;
+    background-size: cover;
+    background-attachment: local;
+}
+
 #calendario::before,
 .wrapper-eventos #calendario::before {
     content: '';
     position: absolute;
-    inset: 50% auto auto 50%;
-    width: 420px;
-    height: 420px;
-    transform: translate(-50%, -50%);
-    background-image: var(--calendar-logo);
-    background-repeat: no-repeat;
-    background-position: center;
-    background-size: contain;
-    opacity: 0.08;
+    inset: 0;
+    background-color: rgba(255, 255, 255, calc(1 - var(--background-opacity)));
     pointer-events: none;
     z-index: 0;
 }

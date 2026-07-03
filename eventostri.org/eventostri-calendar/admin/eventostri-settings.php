@@ -11,6 +11,30 @@ function eventostri_calendar_default_event_image_url() {
     return eventostri_calendar_default_branding_image_url();
 }
 
+function eventostri_calendar_get_header_image($calendar_type = 'public') {
+    $option_key = $calendar_type === 'admin' ? 'eventostri_calendar_header_image_admin' : 'eventostri_calendar_header_image_public';
+    $url = get_option($option_key, '');
+    return esc_url_raw(trim((string) $url)) ?: eventostri_calendar_default_branding_image_url();
+}
+
+function eventostri_calendar_get_background_image($calendar_type = 'public') {
+    $option_key = $calendar_type === 'admin' ? 'eventostri_calendar_background_image_admin' : 'eventostri_calendar_background_image_public';
+    $url = get_option($option_key, '');
+    return esc_url_raw(trim((string) $url)) ?: eventostri_calendar_default_branding_image_url();
+}
+
+function eventostri_calendar_get_background_opacity($calendar_type = 'public') {
+    $option_key = $calendar_type === 'admin' ? 'eventostri_calendar_background_opacity_admin' : 'eventostri_calendar_background_opacity_public';
+    $opacity = get_option($option_key, 100);
+    $opacity = intval($opacity);
+    return max(0, min(100, $opacity));
+}
+
+// Backward compatibility - redirect old setting to public calendar background
+function eventostri_calendar_get_logo_url() {
+    return eventostri_calendar_get_background_image('public');
+}
+
 function eventostri_calendar_default_colors() {
     return array(
         'primary_color' => '#0b5fff',
@@ -85,25 +109,12 @@ function eventostri_calendar_resolve_labels($value) {
     return $resolved;
 }
 
-function eventostri_calendar_resolve_logo_url($value) {
-    $resolved = esc_url_raw(trim((string) $value));
-    if ($resolved === '') {
-        return eventostri_calendar_default_branding_image_url();
-    }
-
-    return $resolved;
-}
-
 function eventostri_calendar_get_colors() {
     return eventostri_calendar_resolve_colors(get_option('eventostri_calendar_colors', ''));
 }
 
 function eventostri_calendar_get_labels() {
     return eventostri_calendar_resolve_labels(get_option('eventostri_calendar_labels', array()));
-}
-
-function eventostri_calendar_get_logo_url() {
-    return eventostri_calendar_resolve_logo_url(get_option('eventostri_calendar_background_image', ''));
 }
 
 function eventostri_calendar_get_default_event_image_url() {
@@ -203,6 +214,12 @@ function eventostri_calendar_get_tipo_colors() {
 function eventostri_calendar_get_resolved_settings() {
     return array(
         'branding_image_url' => eventostri_calendar_get_logo_url(),
+        'header_image_public' => eventostri_calendar_get_header_image('public'),
+        'header_image_admin' => eventostri_calendar_get_header_image('admin'),
+        'background_image_public' => eventostri_calendar_get_background_image('public'),
+        'background_image_admin' => eventostri_calendar_get_background_image('admin'),
+        'background_opacity_public' => eventostri_calendar_get_background_opacity('public'),
+        'background_opacity_admin' => eventostri_calendar_get_background_opacity('admin'),
         'default_event_image_url' => eventostri_calendar_get_default_event_image_url(),
         'colors' => eventostri_calendar_get_colors(),
         'labels' => eventostri_calendar_get_labels(),
@@ -245,13 +262,75 @@ function eventostri_sanitize_calendar_tipo_colors($value) {
 }
 
 function eventostri_register_calendar_settings() {
+    // Header image for public calendar
     register_setting(
         'eventostri_calendar_settings',
-        'eventostri_calendar_background_image',
+        'eventostri_calendar_header_image_public',
         array(
             'type' => 'string',
             'sanitize_callback' => 'esc_url_raw',
             'default' => eventostri_calendar_default_branding_image_url(),
+        )
+    );
+
+    // Background image for public calendar
+    register_setting(
+        'eventostri_calendar_settings',
+        'eventostri_calendar_background_image_public',
+        array(
+            'type' => 'string',
+            'sanitize_callback' => 'esc_url_raw',
+            'default' => eventostri_calendar_default_branding_image_url(),
+        )
+    );
+
+    // Background opacity for public calendar (0-100)
+    register_setting(
+        'eventostri_calendar_settings',
+        'eventostri_calendar_background_opacity_public',
+        array(
+            'type' => 'integer',
+            'sanitize_callback' => function( $value ) {
+                $opacity = intval( $value );
+                return max( 0, min( 100, $opacity ) );
+            },
+            'default' => 100,
+        )
+    );
+
+    // Header image for admin calendar
+    register_setting(
+        'eventostri_calendar_settings',
+        'eventostri_calendar_header_image_admin',
+        array(
+            'type' => 'string',
+            'sanitize_callback' => 'esc_url_raw',
+            'default' => eventostri_calendar_default_branding_image_url(),
+        )
+    );
+
+    // Background image for admin calendar
+    register_setting(
+        'eventostri_calendar_settings',
+        'eventostri_calendar_background_image_admin',
+        array(
+            'type' => 'string',
+            'sanitize_callback' => 'esc_url_raw',
+            'default' => eventostri_calendar_default_branding_image_url(),
+        )
+    );
+
+    // Background opacity for admin calendar (0-100)
+    register_setting(
+        'eventostri_calendar_settings',
+        'eventostri_calendar_background_opacity_admin',
+        array(
+            'type' => 'integer',
+            'sanitize_callback' => function( $value ) {
+                $opacity = intval( $value );
+                return max( 0, min( 100, $opacity ) );
+            },
+            'default' => 100,
         )
     );
 
@@ -327,9 +406,17 @@ function eventostri_render_calendar_settings_page() {
 
     $colors = eventostri_calendar_get_colors();
     $labels = eventostri_calendar_get_labels();
-    $logo = eventostri_calendar_get_logo_url();
     $default_event_image = eventostri_calendar_get_default_event_image_url();
     $defaults = eventostri_calendar_default_colors();
+    
+    // New branding images
+    $header_public = eventostri_calendar_get_header_image('public');
+    $background_public = eventostri_calendar_get_background_image('public');
+    $opacity_public = eventostri_calendar_get_background_opacity('public');
+    
+    $header_admin = eventostri_calendar_get_header_image('admin');
+    $background_admin = eventostri_calendar_get_background_image('admin');
+    $opacity_admin = eventostri_calendar_get_background_opacity('admin');
     ?>
     <div class="wrap">
         <h1><?php echo esc_html__('Configuracion de EventosTri Calendar', 'eventostri-calendar'); ?></h1>
@@ -340,14 +427,82 @@ function eventostri_render_calendar_settings_page() {
 
             <table class="form-table" role="presentation">
                 <tr>
-                    <th scope="row"><?php echo esc_html__('Imagen de fondo del calendario', 'eventostri-calendar'); ?></th>
+                    <th scope="row"><?php echo esc_html__('Calendario Público - Imagen del Encabezado', 'eventostri-calendar'); ?></th>
                     <td>
-                        <input type="url" id="eventostri_calendar_background_image" name="eventostri_calendar_background_image" value="<?php echo esc_attr($logo); ?>" class="regular-text" />
-                        <button type="button" class="button" id="eventostri_select_background_image"><?php echo esc_html__('Seleccionar imagen', 'eventostri-calendar'); ?></button>
+                        <input type="url" id="eventostri_calendar_header_image_public" name="eventostri_calendar_header_image_public" value="<?php echo esc_attr($header_public); ?>" class="regular-text" />
+                        <button type="button" class="button" id="eventostri_select_header_image_public"><?php echo esc_html__('Seleccionar imagen', 'eventostri-calendar'); ?></button>
                         <p class="description">
-                            <?php echo esc_html__('Recomendado: formato PNG/JPG, minimo 600x600 px, peso menor a 400 KB.', 'eventostri-calendar'); ?>
+                            <?php echo esc_html__('Logo o imagen para el encabezado del calendario público.', 'eventostri-calendar'); ?><br>
+                            <strong><?php echo esc_html__('Dimensiones recomendadas:', 'eventostri-calendar'); ?></strong> 600 x 200 px (o 900 x 300 px)<br>
+                            <strong><?php echo esc_html__('Formato:', 'eventostri-calendar'); ?></strong> PNG con transparencia o JPG<br>
+                            <strong><?php echo esc_html__('Tamaño del archivo:', 'eventostri-calendar'); ?></strong> 50-100 KB<br>
+                            <strong><?php echo esc_html__('Proporción:', 'eventostri-calendar'); ?></strong> 3:1 (ancho:alto)
                         </p>
-                        <img id="eventostri_calendar_background_preview" src="<?php echo esc_url($logo); ?>" alt="<?php echo esc_attr__('Vista previa de fondo', 'eventostri-calendar'); ?>" style="margin-top:10px;max-width:180px;height:auto;border:1px solid #ccd0d4;border-radius:8px;padding:6px;background:#fff;" />
+                        <img id="eventostri_calendar_header_image_public_preview" src="<?php echo esc_url($header_public); ?>" alt="<?php echo esc_attr__('Vista previa', 'eventostri-calendar'); ?>" style="margin-top:10px;max-width:260px;height:auto;border:1px solid #ccd0d4;border-radius:8px;padding:6px;background:#fff;" />
+                    </td>
+                </tr>
+
+                <tr>
+                    <th scope="row"><?php echo esc_html__('Calendario Público - Imagen de Fondo', 'eventostri-calendar'); ?></th>
+                    <td>
+                        <input type="url" id="eventostri_calendar_background_image_public" name="eventostri_calendar_background_image_public" value="<?php echo esc_attr($background_public); ?>" class="regular-text" />
+                        <button type="button" class="button" id="eventostri_select_background_image_public"><?php echo esc_html__('Seleccionar imagen', 'eventostri-calendar'); ?></button>
+                        <p class="description">
+                            <?php echo esc_html__('Imagen de fondo que cubre la cuadrícula del calendario (responsiva en desktop y móvil).', 'eventostri-calendar'); ?><br>
+                            <strong><?php echo esc_html__('Dimensiones recomendadas:', 'eventostri-calendar'); ?></strong> 1920 x 1200 px (una imagen para todos los dispositivos)<br>
+                            <strong><?php echo esc_html__('Formato:', 'eventostri-calendar'); ?></strong> PNG, JPG o WebP (WebP 30% más pequeño)<br>
+                            <strong><?php echo esc_html__('Tamaño del archivo:', 'eventostri-calendar'); ?></strong> 200-300 KB (PNG) o 100-150 KB (WebP)<br>
+                            <strong><?php echo esc_html__('Proporción:', 'eventostri-calendar'); ?></strong> 4:3 (recomendado para calendarios)<br>
+                            <strong><?php echo esc_html__('DPI:', 'eventostri-calendar'); ?></strong> 72 DPI (estándar web)
+                        </p>
+                        <div style="margin-top:10px;">
+                            <label><strong><?php echo esc_html__('Opacidad del fondo:', 'eventostri-calendar'); ?></strong> <span id="eventostri_background_opacity_public_value"><?php echo intval($opacity_public); ?>%</span></label><br>
+                            <input type="range" id="eventostri_calendar_background_opacity_public" name="eventostri_calendar_background_opacity_public" min="0" max="100" value="<?php echo intval($opacity_public); ?>" style="width:200px;cursor:pointer;" />
+                            <p class="description" style="margin-top:5px;font-size:12px;">
+                                <?php echo esc_html__('0% = imagen oculta (fondo blanco), 100% = imagen completamente visible. Se recomienda 65-75% para legibilidad.', 'eventostri-calendar'); ?>
+                            </p>
+                        </div>
+                        <img id="eventostri_calendar_background_image_public_preview" src="<?php echo esc_url($background_public); ?>" alt="<?php echo esc_attr__('Vista previa', 'eventostri-calendar'); ?>" style="margin-top:10px;max-width:180px;height:auto;border:1px solid #ccd0d4;border-radius:8px;padding:6px;background:#fff;" />
+                    </td>
+                </tr>
+
+                <tr>
+                    <th scope="row"><?php echo esc_html__('Calendario Administrador - Imagen del Encabezado', 'eventostri-calendar'); ?></th>
+                    <td>
+                        <input type="url" id="eventostri_calendar_header_image_admin" name="eventostri_calendar_header_image_admin" value="<?php echo esc_attr($header_admin); ?>" class="regular-text" />
+                        <button type="button" class="button" id="eventostri_select_header_image_admin"><?php echo esc_html__('Seleccionar imagen', 'eventostri-calendar'); ?></button>
+                        <p class="description">
+                            <?php echo esc_html__('Logo o imagen para el encabezado del calendario de administrador.', 'eventostri-calendar'); ?><br>
+                            <strong><?php echo esc_html__('Dimensiones recomendadas:', 'eventostri-calendar'); ?></strong> 600 x 200 px (o 900 x 300 px)<br>
+                            <strong><?php echo esc_html__('Formato:', 'eventostri-calendar'); ?></strong> PNG con transparencia o JPG<br>
+                            <strong><?php echo esc_html__('Tamaño del archivo:', 'eventostri-calendar'); ?></strong> 50-100 KB<br>
+                            <strong><?php echo esc_html__('Proporción:', 'eventostri-calendar'); ?></strong> 3:1 (ancho:alto)
+                        </p>
+                        <img id="eventostri_calendar_header_image_admin_preview" src="<?php echo esc_url($header_admin); ?>" alt="<?php echo esc_attr__('Vista previa', 'eventostri-calendar'); ?>" style="margin-top:10px;max-width:260px;height:auto;border:1px solid #ccd0d4;border-radius:8px;padding:6px;background:#fff;" />
+                    </td>
+                </tr>
+
+                <tr>
+                    <th scope="row"><?php echo esc_html__('Calendario Administrador - Imagen de Fondo', 'eventostri-calendar'); ?></th>
+                    <td>
+                        <input type="url" id="eventostri_calendar_background_image_admin" name="eventostri_calendar_background_image_admin" value="<?php echo esc_attr($background_admin); ?>" class="regular-text" />
+                        <button type="button" class="button" id="eventostri_select_background_image_admin"><?php echo esc_html__('Seleccionar imagen', 'eventostri-calendar'); ?></button>
+                        <p class="description">
+                            <?php echo esc_html__('Imagen de fondo que cubre la cuadrícula del calendario (responsiva en desktop y móvil).', 'eventostri-calendar'); ?><br>
+                            <strong><?php echo esc_html__('Dimensiones recomendadas:', 'eventostri-calendar'); ?></strong> 1920 x 1200 px (una imagen para todos los dispositivos)<br>
+                            <strong><?php echo esc_html__('Formato:', 'eventostri-calendar'); ?></strong> PNG, JPG o WebP (WebP 30% más pequeño)<br>
+                            <strong><?php echo esc_html__('Tamaño del archivo:', 'eventostri-calendar'); ?></strong> 200-300 KB (PNG) o 100-150 KB (WebP)<br>
+                            <strong><?php echo esc_html__('Proporción:', 'eventostri-calendar'); ?></strong> 4:3 (recomendado para calendarios)<br>
+                            <strong><?php echo esc_html__('DPI:', 'eventostri-calendar'); ?></strong> 72 DPI (estándar web)
+                        </p>
+                        <div style="margin-top:10px;">
+                            <label><strong><?php echo esc_html__('Opacidad del fondo:', 'eventostri-calendar'); ?></strong> <span id="eventostri_background_opacity_admin_value"><?php echo intval($opacity_admin); ?>%</span></label><br>
+                            <input type="range" id="eventostri_calendar_background_opacity_admin" name="eventostri_calendar_background_opacity_admin" min="0" max="100" value="<?php echo intval($opacity_admin); ?>" style="width:200px;cursor:pointer;" />
+                            <p class="description" style="margin-top:5px;font-size:12px;">
+                                <?php echo esc_html__('0% = imagen oculta (fondo blanco), 100% = imagen completamente visible. Se recomienda 65-75% para legibilidad.', 'eventostri-calendar'); ?>
+                            </p>
+                        </div>
+                        <img id="eventostri_calendar_background_image_admin_preview" src="<?php echo esc_url($background_admin); ?>" alt="<?php echo esc_attr__('Vista previa', 'eventostri-calendar'); ?>" style="margin-top:10px;max-width:180px;height:auto;border:1px solid #ccd0d4;border-radius:8px;padding:6px;background:#fff;" />
                     </td>
                 </tr>
 
@@ -436,33 +591,63 @@ function eventostri_render_calendar_settings_page() {
     </div>
     <script>
     (function($) {
-        var $logoInput = $('#eventostri_calendar_background_image');
-        var $logoPreview = $('#eventostri_calendar_background_preview');
         var $defaultEventImageInput = $('#eventostri_calendar_default_event_image');
         var $defaultEventImagePreview = $('#eventostri_calendar_default_event_preview');
         var $previewChip = $('#eventostri_preview_chip');
         var $colorFields = $('.eventostri-color-field');
 
-        $('#eventostri_select_background_image').on('click', function(e) {
-            e.preventDefault();
-            var frame = wp.media({
-                title: '<?php echo esc_js(__('Selecciona una imagen de fondo', 'eventostri-calendar')); ?>',
-                button: { text: '<?php echo esc_js(__('Usar esta imagen', 'eventostri-calendar')); ?>' },
-                multiple: false
-            });
+        // Helper function to create media picker handler
+        function createMediaPickerHandler(inputSelector, previewSelector, title) {
+            return function(e) {
+                e.preventDefault();
+                var frame = wp.media({
+                    title: title,
+                    button: { text: '<?php echo esc_js(__('Usar esta imagen', 'eventostri-calendar')); ?>' },
+                    multiple: false
+                });
 
-            frame.on('select', function() {
-                var attachment = frame.state().get('selection').first().toJSON();
-                if (!attachment || !attachment.url) {
-                    return;
-                }
-                $logoInput.val(attachment.url);
-                $logoPreview.attr('src', attachment.url);
-            });
+                frame.on('select', function() {
+                    var attachment = frame.state().get('selection').first().toJSON();
+                    if (!attachment || !attachment.url) {
+                        return;
+                    }
+                    $(inputSelector).val(attachment.url);
+                    $(previewSelector).attr('src', attachment.url);
+                });
 
-            frame.open();
-        });
+                frame.open();
+            };
+        }
 
+        // Header image - Public
+        $('#eventostri_select_header_image_public').on('click', createMediaPickerHandler(
+            '#eventostri_calendar_header_image_public',
+            '#eventostri_calendar_header_image_public_preview',
+            '<?php echo esc_js(__('Selecciona imagen del encabezado (Calendario Público)', 'eventostri-calendar')); ?>'
+        ));
+
+        // Background image - Public
+        $('#eventostri_select_background_image_public').on('click', createMediaPickerHandler(
+            '#eventostri_calendar_background_image_public',
+            '#eventostri_calendar_background_image_public_preview',
+            '<?php echo esc_js(__('Selecciona imagen de fondo (Calendario Público)', 'eventostri-calendar')); ?>'
+        ));
+
+        // Header image - Admin
+        $('#eventostri_select_header_image_admin').on('click', createMediaPickerHandler(
+            '#eventostri_calendar_header_image_admin',
+            '#eventostri_calendar_header_image_admin_preview',
+            '<?php echo esc_js(__('Selecciona imagen del encabezado (Calendario Administrador)', 'eventostri-calendar')); ?>'
+        ));
+
+        // Background image - Admin
+        $('#eventostri_select_background_image_admin').on('click', createMediaPickerHandler(
+            '#eventostri_calendar_background_image_admin',
+            '#eventostri_calendar_background_image_admin_preview',
+            '<?php echo esc_js(__('Selecciona imagen de fondo (Calendario Administrador)', 'eventostri-calendar')); ?>'
+        ));
+
+        // Default event image
         $('#eventostri_select_default_event_image').on('click', function(e) {
             e.preventDefault();
             var frame = wp.media({
@@ -483,6 +668,15 @@ function eventostri_render_calendar_settings_page() {
             frame.open();
         });
 
+        // Opacity slider handlers
+        $('#eventostri_calendar_background_opacity_public').on('input change', function() {
+            $('#eventostri_background_opacity_public_value').text($(this).val() + '%');
+        });
+
+        $('#eventostri_calendar_background_opacity_admin').on('input change', function() {
+            $('#eventostri_background_opacity_admin_value').text($(this).val() + '%');
+        });
+
         function updatePreview() {
             var primary = $('input[name="eventostri_calendar_colors[primary_color]"]').val() || '#0b5fff';
             var accent = $('input[name="eventostri_calendar_colors[accent_color]"]').val() || '#00c2ff';
@@ -501,10 +695,10 @@ function eventostri_render_calendar_settings_page() {
             var $row = $input.closest('.eventostri-tipo-color-row');
             var $preview = $row.find('.eventostri-tipo-color-preview').first();
             if ($preview.length === 0) return;
-            
+             
             var colorValue = $input.val();
             $preview.data('color', colorValue);
-            
+             
             if (!colorValue || colorValue.trim() === '') {
                 $preview.css({
                     backgroundColor: '#95E1D3',
@@ -513,25 +707,25 @@ function eventostri_render_calendar_settings_page() {
                 });
                 return;
             }
-            
+             
             var parts = colorValue.split(',').map(function(c) { return c.trim(); });
             var bgColor = (parts[0] && parts[0].match(/^#[0-9A-F]{6}$/i)) ? parts[0] : '#95E1D3';
             var borderColor = (parts[1] && parts[1].match(/^#[0-9A-F]{6}$/i)) ? parts[1] : '#76B8B0';
             var textColor = (parts[2] && parts[2].match(/^#[0-9A-F]{6}$/i)) ? parts[2] : '#ffffff';
-            
+             
             $preview.css({
                 backgroundColor: bgColor,
                 borderColor: borderColor,
                 color: textColor
             });
         }
-        
+         
         var $tipoColorFields = $('.eventostri-tipo-color-field');
-        
+         
         $tipoColorFields.on('input change', function() {
             updateTipoColorPreview($(this));
         });
-        
+         
         $tipoColorFields.each(function() {
             updateTipoColorPreview($(this));
         });
@@ -556,6 +750,21 @@ function eventostri_print_calendar_custom_css_variables() {
     $settings = eventostri_calendar_get_resolved_settings();
     $colors = $settings['colors'];
     $logo = $settings['branding_image_url'];
+    
+    // Determine which calendar context we're in
+    $is_admin = is_admin();
+    $header_image = $is_admin 
+        ? $settings['header_image_admin'] 
+        : $settings['header_image_public'];
+    $background_image = $is_admin 
+        ? $settings['background_image_admin'] 
+        : $settings['background_image_public'];
+    $opacity = $is_admin 
+        ? $settings['background_opacity_admin'] 
+        : $settings['background_opacity_public'];
+    
+    // Convert opacity (0-100) to decimal (0-1)
+    $opacity_decimal = $opacity / 100;
 
     echo '<style id="eventostri-theme-custom-vars">:root{';
     echo '--primary-color:' . esc_attr($colors['primary_color']) . ';';
@@ -563,8 +772,12 @@ function eventostri_print_calendar_custom_css_variables() {
     echo '--secondary-color:' . esc_attr($colors['secondary_color']) . ';';
     echo '--bg-color:' . esc_attr($colors['bg_color']) . ';';
     echo '--calendar-logo:url("' . esc_url($logo) . '");';
+    echo '--calendar-header-image:url("' . esc_url($header_image) . '");';
+    echo '--calendar-background-image:url("' . esc_url($background_image) . '");';
+    echo '--background-opacity:' . floatval($opacity_decimal) . ';';
     echo '}</style>';
 }
+
 add_action('wp_head', 'eventostri_print_calendar_custom_css_variables', 25);
 add_action('admin_head', 'eventostri_print_calendar_custom_css_variables', 25);
 
