@@ -322,7 +322,10 @@ body {
 .wrapper-eventos #calendario::before {
     content: '';
     position: absolute;
-    inset: 0;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
     background-color: rgba(255, 255, 255, calc(1 - var(--background-opacity)));
     pointer-events: none;
     z-index: 0;
@@ -331,7 +334,17 @@ body {
 #calendario .fc,
 .wrapper-eventos #calendario .fc {
     position: relative;
-    z-index: 1;
+    z-index: 2;
+}
+
+#calendario .fc-toolbar,
+.wrapper-eventos #calendario .fc-toolbar {
+    position: relative;
+    z-index: 3;
+    background-color: rgba(255, 255, 255, 0.95);
+    border-radius: 8px;
+    padding: 12px;
+    margin-bottom: 15px;
 }
 
 /* --- Filtros --- */
