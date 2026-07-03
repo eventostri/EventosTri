@@ -1,6 +1,28 @@
 <!-- wp:group {"className":"site-container page-admin-calendario-v2 admin-shell","layout":{"type":"constrained"}} -->
 <div class="wp-block-group site-container page-admin-calendario-v2 admin-shell">
-  <!-- wp:template-part {"slug":"header-admin","theme":"eventostri-calendar","tagName":"header"} /-->
+  <!-- wp:group {"tagName":"header","className":"site-header site-header-admin","layout":{"type":"flex","justifyContent":"space-between","flexWrap":"nowrap"}} -->
+  <header class="wp-block-group site-header site-header-admin">
+    <!-- wp:group {"layout":{"type":"flex","justifyContent":"left","flexWrap":"nowrap"}} -->
+    <div class="wp-block-group">
+      <!-- wp:shortcode -->
+      [eventostri_branding_image]
+      <!-- /wp:shortcode -->
+      <!-- wp:group {"className":"site-info","layout":{"type":"constrained"}} -->
+      <div class="wp-block-group site-info">
+        <!-- wp:site-title {"level":2,"className":"site-title"} /-->
+        <!-- wp:paragraph {"className":"site-description","fontSize":"small"} -->
+        <p class="site-description has-small-font-size">Panel de administracion</p>
+        <!-- /wp:paragraph -->
+      </div>
+      <!-- /wp:group -->
+    </div>
+    <!-- /wp:group -->
+
+    <!-- wp:paragraph {"fontSize":"small","style":{"color":{"text":"#5f6d8d"}}} -->
+    <p class="has-small-font-size" style="color:#5f6d8d">EventosTri</p>
+    <!-- /wp:paragraph -->
+  </header>
+  <!-- /wp:group -->
 
   <!-- wp:group {"tagName":"main","align":"wide","layout":{"type":"constrained"}} -->
   <main class="wp-block-group alignwide">

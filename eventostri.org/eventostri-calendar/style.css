@@ -99,10 +99,16 @@ body {
 
 .site-header .custom-logo,
 .site-header .custom-logo-link img,
-.site-header .wp-block-site-logo img {
+.site-header .wp-block-site-logo img,
+.site-header .eventostri-header-branding img {
     width: 60px !important;
     height: auto !important;
     margin-right: 20px;
+    display: block;
+}
+
+.site-header .eventostri-header-branding {
+    flex: 0 0 auto;
 }
 
 .site-info {
@@ -1022,5 +1028,4 @@ body {
         line-height: 1.05 !important;
     }
 }
-
 

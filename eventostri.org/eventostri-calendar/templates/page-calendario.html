@@ -1,6 +1,19 @@
 <!-- wp:group {"className":"site-container page-calendario","layout":{"type":"constrained"}} -->
 <div class="wp-block-group site-container page-calendario">
-  <!-- wp:template-part {"slug":"header","theme":"eventostri-calendar","tagName":"header"} /-->
+  <!-- wp:group {"tagName":"header","className":"site-header","layout":{"type":"flex","justifyContent":"left","flexWrap":"nowrap"}} -->
+  <header class="wp-block-group site-header">
+    <!-- wp:shortcode -->
+    [eventostri_branding_image]
+    <!-- /wp:shortcode -->
+
+    <!-- wp:group {"className":"site-info","layout":{"type":"constrained"}} -->
+    <div class="wp-block-group site-info">
+      <!-- wp:site-title {"level":1,"className":"site-title"} /-->
+      <!-- wp:site-tagline {"className":"site-description"} /-->
+    </div>
+    <!-- /wp:group -->
+  </header>
+  <!-- /wp:group -->
 
   <!-- wp:group {"tagName":"main","layout":{"type":"constrained"}} -->
   <main class="wp-block-group">

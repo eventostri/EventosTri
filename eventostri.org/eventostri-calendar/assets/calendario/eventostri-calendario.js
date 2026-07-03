@@ -20,9 +20,23 @@
     let omitirSiguientePopstateModal = false;
     let swipeNavegacionInicializada = false;
     const CLAVE_ANALITICA_BUSQUEDA = '__eventostriSearchAnalytics';
-    const urlJSON = (window.eventostriCalendarioConfig && window.eventostriCalendarioConfig.eventosUrl)
-        ? window.eventostriCalendarioConfig.eventosUrl
-        : '/wp-json/eventostri/v1/eventos';
+    const CLAVE_FILTROS_AVANZADOS_PUBLIC = '__eventostriSearchAdvancedFiltersPublic';
+    const CLAVE_FILTROS_CHECKS_PUBLIC = '__eventostriSearchCheckFiltersPublic';
+    const calendarioConfig = window.eventostriCalendarioConfig || {};
+    const calendarioRestConfig = calendarioConfig.rest || {};
+    const calendarioSettingsConfig = calendarioConfig.settings || {};
+    const defaultEventImageUrl = String(calendarioSettingsConfig.default_event_image_url || '').trim();
+    const urlJSON = calendarioRestConfig.eventosUrl || calendarioConfig.eventosUrl || '/wp-json/eventostri/v1/eventos';
+    let filtrosAvanzadosBusqueda = {
+        dateFrom: '',
+        dateTo: '',
+        distanceMin: '',
+        distanceMax: '',
+        organizer: '',
+        status: '',
+        maxDistance: ''
+    };
+    let filtrosChecksPersistidos = { tipos: [], lugar: [] };
 
     if (!window.FullCalendar) {
         return;
@@ -90,31 +104,41 @@
     }
 
     function obtenerColorPorTipos(tipos) {
-        const texto = tipos.map(function(tipo) {
-            return tipo.toLowerCase();
-        });
+        return obtenerColorFromResolvedColor(null);
+    }
 
-        if (texto.some(function(tipo) { return tipo.includes('mtb'); })) {
+    function parseColorString(colorString) {
+        if (!colorString || colorString.trim() === '') {
+            return { backgroundColor: '#95E1D3', borderColor: '#76B8B0', textColor: '#ffffff' };
+        }
+        
+        const parts = colorString.split(',').map(c => c.trim());
+        
+        if (parts.length === 3) {
             return {
-                backgroundColor: '#ffe2d7',
-                borderColor: '#f5a283',
-                textColor: '#9a3f1f'
+                backgroundColor: parts[0] || '#95E1D3',
+                borderColor: parts[1] || '#76B8B0',
+                textColor: parts[2] || '#ffffff'
+            };
+        } else if (parts.length === 1 && parts[0]) {
+            return {
+                backgroundColor: parts[0],
+                borderColor: parts[0],
+                textColor: '#ffffff'
             };
         }
+        
+        return { backgroundColor: '#95E1D3', borderColor: '#76B8B0', textColor: '#ffffff' };
+    }
 
-        if (texto.some(function(tipo) { return tipo.includes('running'); })) {
-            return {
-                backgroundColor: '#dfeeff',
-                borderColor: '#86b9ff',
-                textColor: '#0d4c9a'
-            };
+    function obtenerColorFromResolvedColor(resolvedColor) {
+        if (!resolvedColor || resolvedColor.trim() === '') {
+            const config = (window.eventostriCalendarioConfig && window.eventostriCalendarioConfig.settings && window.eventostriCalendarioConfig.settings.tipo_colors) 
+                ? window.eventostriCalendarioConfig.settings.tipo_colors 
+                : {};
+            resolvedColor = config.default_color || '#95E1D3,#76B8B0,#ffffff';
         }
-
-        return {
-            backgroundColor: '#ece8ff',
-            borderColor: '#b6a7ff',
-            textColor: '#5a45c7'
-        };
+        return parseColorString(resolvedColor);
     }
 
     function detectarFecha(evento) {
@@ -173,6 +197,72 @@
             return base.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
         }
         return base;
+    }
+
+    function cargarJSONLocalStorage(clave, fallback) {
+        try {
+            const raw = localStorage.getItem(clave);
+            if (!raw) return fallback;
+            const parsed = JSON.parse(raw);
+            return parsed && typeof parsed === 'object' ? parsed : fallback;
+        } catch (error) {
+            return fallback;
+        }
+    }
+
+    function guardarJSONLocalStorage(clave, valor) {
+        try {
+            localStorage.setItem(clave, JSON.stringify(valor));
+        } catch (error) {
+            return;
+        }
+    }
+
+    function parsearDistanciasEvento(evento) {
+        const distanciasRaw = String(obtenerPropiedad(evento, 'distancias') || '');
+        return distanciasRaw
+            .split(/[,;/]+/)
+            .map(function(item) {
+                const match = String(item).replace(',', '.').match(/(\d+(?:\.\d+)?)/);
+                return match ? parseFloat(match[1]) : NaN;
+            })
+            .filter(function(valor) { return !Number.isNaN(valor); });
+    }
+
+    function eventoCoincideFiltrosAvanzados(evento, filtros) {
+        const fechaEvento = detectarFecha(evento);
+        const fechaBase = fechaEvento ? String(fechaEvento).split(/[T ]/)[0] : '';
+        const organizer = normalizarTextoBusqueda(obtenerPropiedad(evento, 'organizador') || '');
+        const status = normalizarTextoBusqueda(obtenerPropiedad(evento, 'estado') || '');
+        const distancias = parsearDistanciasEvento(evento);
+        const minDist = distancias.length ? Math.min.apply(null, distancias) : null;
+        const maxDist = distancias.length ? Math.max.apply(null, distancias) : null;
+
+        if (filtros.dateFrom && (!fechaBase || fechaBase < filtros.dateFrom)) return false;
+        if (filtros.dateTo && (!fechaBase || fechaBase > filtros.dateTo)) return false;
+        if (filtros.organizer && !organizer.includes(normalizarTextoBusqueda(filtros.organizer))) return false;
+        if (filtros.status && status !== normalizarTextoBusqueda(filtros.status)) return false;
+
+        if (filtros.distanceMin !== '') {
+            const distanceMin = parseFloat(filtros.distanceMin);
+            if (!Number.isNaN(distanceMin) && (maxDist === null || maxDist < distanceMin)) return false;
+        }
+        if (filtros.distanceMax !== '') {
+            const distanceMax = parseFloat(filtros.distanceMax);
+            if (!Number.isNaN(distanceMax) && (minDist === null || minDist > distanceMax)) return false;
+        }
+        if (filtros.maxDistance !== '' && typeof navigator !== 'undefined' && navigator.geolocation) {
+            const maxDistance = parseFloat(filtros.maxDistance);
+            if (!Number.isNaN(maxDistance) && (minDist === null || minDist > maxDistance)) return false;
+        }
+        return true;
+    }
+
+    function contarFiltrosAvanzadosActivos(filtros) {
+        const keys = ['dateFrom', 'dateTo', 'distanceMin', 'distanceMax', 'organizer', 'status', 'maxDistance'];
+        return keys.reduce(function(total, key) {
+            return total + (String(filtros[key] || '').trim() ? 1 : 0);
+        }, 0);
     }
 
     function escaparParaSelector(valor) {
@@ -275,6 +365,10 @@
             if (!event.changedTouches || event.changedTouches.length !== 1 || !calendarioInstancia) {
                 return;
             }
+            const target = event.target;
+            if (target && target.closest('button, a, input, select, textarea')) {
+                return;
+            }
             const touch = event.changedTouches[0];
             const deltaX = touch.clientX - touchStartX;
             const deltaY = touch.clientY - touchStartY;
@@ -285,7 +379,8 @@
                 return;
             }
 
-            if (deltaX > 0) {
+            // swipe left (deltaX < 0) → advance; swipe right (deltaX > 0) → go back
+            if (deltaX < 0) {
                 calendarioInstancia.next();
             } else {
                 calendarioInstancia.prev();
@@ -418,6 +513,7 @@
 
     function mostrarDetalleEvento(evento) {
         const modal = crearModalEvento();
+        const imageWrap = modal.querySelector('.evento-modal-image-wrap');
         const imagen = modal.querySelector('.evento-modal-image');
         const titulo = modal.querySelector('.evento-modal-title');
         const lugar = modal.querySelector('.evento-modal-place');
@@ -436,6 +532,8 @@
         const inscripcionUrl = (datos.inscripcionesonline || datos.inscripciononline || '').trim();
         const whatsappTexto = (datos.whatsapp || '').trim();
         const imagenUrl = (datos.imagen || '').trim();
+        const imagenResuelta = (datos.resolvedImage || datos.resolvedimage || '').trim();
+        const imagenFinal = imagenUrl || imagenResuelta || defaultEventImageUrl;
         const tituloTexto = datos.titulo || evento.title || 'Evento deportivo';
         const lugarBase = (datos.lugar || '').trim();
         const estadoBase = (datos.estado || '').trim();
@@ -450,12 +548,14 @@
         descripcion.textContent = descripcionTexto || '';
         descripcionBlock.style.display = descripcionTexto ? '' : 'none';
 
-        if (imagenUrl) {
-            imagen.src = imagenUrl;
+        if (imagenFinal) {
+            imagen.src = imagenFinal;
             imagen.style.display = 'block';
+            imageWrap.style.display = '';
         } else {
             imagen.removeAttribute('src');
             imagen.style.display = 'none';
+            imageWrap.style.display = 'none';
         }
 
         distancias.innerHTML = '';
@@ -559,6 +659,16 @@
             '<button type="button" class="evento-search-modal-close" aria-label="Cerrar busqueda">&times;</button>',
             '<h3 id="evento-search-modal-title" class="evento-search-modal-title">Busqueda avanzada</h3>',
             '<p class="evento-search-modal-shortcut">Atajo: Ctrl+K / Cmd+K</p>',
+            '<div class="evento-search-modal-filters" style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;">',
+            '<label style="display:flex;flex-direction:column;font-size:12px;">Fecha desde<input type="date" id="evento-search-filter-date-from"></label>',
+            '<label style="display:flex;flex-direction:column;font-size:12px;">Fecha hasta<input type="date" id="evento-search-filter-date-to"></label>',
+            '<label style="display:flex;flex-direction:column;font-size:12px;">Distancia mínima (km)<input type="number" step="0.1" min="0" id="evento-search-filter-distance-min" placeholder="5"></label>',
+            '<label style="display:flex;flex-direction:column;font-size:12px;">Distancia máxima (km)<input type="number" step="0.1" min="0" id="evento-search-filter-distance-max" placeholder="42"></label>',
+            '<label style="display:flex;flex-direction:column;font-size:12px;">Organizador<input type="text" id="evento-search-filter-organizer" placeholder="Nombre organizador"></label>',
+            '<label style="display:flex;flex-direction:column;font-size:12px;">Estado<input type="text" id="evento-search-filter-status" placeholder="YUC/CAM/QROO"></label>',
+            '<label style="display:flex;flex-direction:column;font-size:12px;">Max distancia (km)<input type="number" step="0.1" min="0" id="evento-search-filter-max-distance" placeholder="Opcional"></label>',
+            '<div style="display:flex;align-items:end;gap:8px;"><span id="evento-search-filter-badge" style="display:inline-flex;align-items:center;justify-content:center;min-width:22px;height:22px;padding:0 8px;border-radius:999px;background:#e2e8f0;font-size:12px;">0</span><button type="button" id="evento-search-filter-clear" class="button">Limpiar filtros</button></div>',
+            '</div>',
             '<input type="text" id="evento-search-modal-input" class="evento-search-modal-input" autocomplete="off" placeholder="Buscar por nombre de evento..." aria-label="Buscar por nombre de evento">',
             '<div id="evento-search-modal-status" class="evento-search-modal-status" aria-live="polite"></div>',
             '<ul id="evento-search-modal-results" class="evento-search-modal-results" role="listbox" aria-label="Resultados de busqueda"></ul>',
@@ -582,7 +692,16 @@
             close: modal.querySelector('.evento-search-modal-close'),
             input: modal.querySelector('#evento-search-modal-input'),
             status: modal.querySelector('#evento-search-modal-status'),
-            results: modal.querySelector('#evento-search-modal-results')
+            results: modal.querySelector('#evento-search-modal-results'),
+            filterDateFrom: modal.querySelector('#evento-search-filter-date-from'),
+            filterDateTo: modal.querySelector('#evento-search-filter-date-to'),
+            filterDistanceMin: modal.querySelector('#evento-search-filter-distance-min'),
+            filterDistanceMax: modal.querySelector('#evento-search-filter-distance-max'),
+            filterOrganizer: modal.querySelector('#evento-search-filter-organizer'),
+            filterStatus: modal.querySelector('#evento-search-filter-status'),
+            filterMaxDistance: modal.querySelector('#evento-search-filter-max-distance'),
+            filterBadge: modal.querySelector('#evento-search-filter-badge'),
+            filterClear: modal.querySelector('#evento-search-filter-clear')
         };
     }
 
@@ -620,13 +739,14 @@
             });
             if (!eventoCalendario) return;
             resaltarEventoCalendario(eventoCalendario);
-            const selector = '#calendario .fc-event[data-event-id= + escaparParaSelector(eventoCalendario.id) + ]';
+            const selector = '#calendario .fc-event[data-event-id="' + escaparParaSelector(eventoCalendario.id) + '"]';
             const elemento = document.querySelector(selector);
             if (elemento) {
                 elemento.scrollIntoView({ behavior: 'smooth', block: 'center' });
                 elemento.setAttribute('tabindex', '-1');
                 elemento.focus({ preventScroll: true });
             }
+            mostrarDetalleEvento(eventoCalendario);
         }, 180);
     }
 
@@ -669,7 +789,9 @@
     }
 
     function obtenerResultadosBusquedaModal(termino) {
-        return obtenerResultadosBusqueda(termino, 30);
+        return obtenerResultadosBusqueda(termino, 30).filter(function(evento) {
+            return eventoCoincideFiltrosAvanzados(evento, filtrosAvanzadosBusqueda);
+        });
     }
 
     function obtenerResultadosBusquedaInline(termino) {
@@ -722,17 +844,21 @@
     function renderizarResultadosBusquedaModal() {
         const elementos = obtenerElementosModalBusqueda();
         const terminoVisible = terminoBusquedaModal.trim();
+        const filtrosActivos = contarFiltrosAvanzadosActivos(filtrosAvanzadosBusqueda);
         elementos.results.innerHTML = '';
+        if (elementos.filterBadge) {
+            elementos.filterBadge.textContent = String(filtrosActivos);
+        }
 
         if (!terminoVisible) {
-            elementos.status.textContent = 'Escribe para buscar eventos por nombre.';
+            elementos.status.textContent = 'Escribe para buscar eventos por nombre.' + (filtrosActivos ? (' Filtros activos: ' + filtrosActivos + '.') : '');
             indiceActivoBusquedaModal = -1;
             return;
         }
 
         resultadosBusquedaModal = obtenerResultadosBusquedaModal(terminoVisible);
         elementos.status.textContent = resultadosBusquedaModal.length
-            ? resultadosBusquedaModal.length + ' resultado(s) encontrados'
+            ? resultadosBusquedaModal.length + ' resultado(s) encontrados' + (filtrosActivos ? (' · Filtros: ' + filtrosActivos) : '')
             : 'No hay resultados para "' + terminoVisible + '".';
 
         if (terminoVisible !== ultimoTerminoAnaliticaModal) {
@@ -788,6 +914,13 @@
         if (!modalYaAbierto) {
             registrarModalEnHistorial('search');
         }
+        elementos.filterDateFrom.value = filtrosAvanzadosBusqueda.dateFrom || '';
+        elementos.filterDateTo.value = filtrosAvanzadosBusqueda.dateTo || '';
+        elementos.filterDistanceMin.value = filtrosAvanzadosBusqueda.distanceMin || '';
+        elementos.filterDistanceMax.value = filtrosAvanzadosBusqueda.distanceMax || '';
+        elementos.filterOrganizer.value = filtrosAvanzadosBusqueda.organizer || '';
+        elementos.filterStatus.value = filtrosAvanzadosBusqueda.status || '';
+        elementos.filterMaxDistance.value = filtrosAvanzadosBusqueda.maxDistance || '';
         terminoBusquedaModal = String(valorInicial || '').trim();
         elementos.input.value = terminoBusquedaModal;
         renderizarResultadosBusquedaModal();
@@ -816,6 +949,19 @@
     function inicializarBusquedaModalEventos(searchInput) {
         const elementos = obtenerElementosModalBusqueda();
         let timeoutBusquedaModal;
+        const actualizarFiltrosModal = function() {
+            filtrosAvanzadosBusqueda = {
+                dateFrom: String(elementos.filterDateFrom.value || '').trim(),
+                dateTo: String(elementos.filterDateTo.value || '').trim(),
+                distanceMin: String(elementos.filterDistanceMin.value || '').trim(),
+                distanceMax: String(elementos.filterDistanceMax.value || '').trim(),
+                organizer: String(elementos.filterOrganizer.value || '').trim(),
+                status: String(elementos.filterStatus.value || '').trim(),
+                maxDistance: String(elementos.filterMaxDistance.value || '').trim()
+            };
+            guardarJSONLocalStorage(CLAVE_FILTROS_AVANZADOS_PUBLIC, filtrosAvanzadosBusqueda);
+            renderizarResultadosBusquedaModal();
+        };
 
         elementos.close.addEventListener('click', function() {
             cerrarModalBusquedaEventos();
@@ -853,6 +999,33 @@
             }
         });
 
+        [
+            elementos.filterDateFrom,
+            elementos.filterDateTo,
+            elementos.filterDistanceMin,
+            elementos.filterDistanceMax,
+            elementos.filterOrganizer,
+            elementos.filterStatus,
+            elementos.filterMaxDistance
+        ].forEach(function(control) {
+            if (!control) return;
+            control.addEventListener('input', actualizarFiltrosModal);
+            control.addEventListener('change', actualizarFiltrosModal);
+        });
+
+        if (elementos.filterClear) {
+            elementos.filterClear.addEventListener('click', function() {
+                elementos.filterDateFrom.value = '';
+                elementos.filterDateTo.value = '';
+                elementos.filterDistanceMin.value = '';
+                elementos.filterDistanceMax.value = '';
+                elementos.filterOrganizer.value = '';
+                elementos.filterStatus.value = '';
+                elementos.filterMaxDistance.value = '';
+                actualizarFiltrosModal();
+            });
+        }
+
         if (searchInput) {
             searchInput.addEventListener('dblclick', function() {
                 abrirModalBusquedaEventos(searchInput.value || '');
@@ -888,6 +1061,16 @@
         }
 
         contenedorCalendario.dataset.fcInicializado = 'true';
+        filtrosAvanzadosBusqueda = Object.assign({
+            dateFrom: '',
+            dateTo: '',
+            distanceMin: '',
+            distanceMax: '',
+            organizer: '',
+            status: '',
+            maxDistance: ''
+        }, cargarJSONLocalStorage(CLAVE_FILTROS_AVANZADOS_PUBLIC, {}));
+        filtrosChecksPersistidos = Object.assign({ tipos: [], lugar: [] }, cargarJSONLocalStorage(CLAVE_FILTROS_CHECKS_PUBLIC, {}));
 
         const basePublica = obtenerEventosPublicosBase();
         generarCheckboxes(basePublica, 'tipos', 'filtro-tipo-container');
@@ -1072,6 +1255,14 @@
         actualizarUIBuscador();
     }
 
+    function guardarFiltrosChecksPublicos() {
+        filtrosChecksPersistidos = {
+            tipos: Array.from(document.querySelectorAll('#filtro-tipo-container input:checked')).map(function(input) { return input.value; }),
+            lugar: Array.from(document.querySelectorAll('#filtro-lugar-container input:checked')).map(function(input) { return input.value; })
+        };
+        guardarJSONLocalStorage(CLAVE_FILTROS_CHECKS_PUBLIC, filtrosChecksPersistidos);
+    }
+
     function generarCheckboxes(eventos, propiedad, contenedorId) {
         const contenedor = document.getElementById(contenedorId);
         if (!contenedor) return;
@@ -1098,11 +1289,15 @@
         }
 
         contenedor.innerHTML = '';
+        const seleccionGuardada = new Set((filtrosChecksPersistidos[propiedad] || []).map(function(v) { return String(v).toLowerCase(); }));
         opcionesOrdenadas.forEach(function(opcion) {
             const label = document.createElement('label');
             label.className = 'checkbox-label';
             label.innerHTML = '<div><input type="checkbox" value="' + opcion + '" style="margin-right:8px;"><span>' + opcion + '</span></div>';
-            label.querySelector('input').addEventListener('change', function() {
+            const checkbox = label.querySelector('input');
+            checkbox.checked = seleccionGuardada.has(String(opcion).toLowerCase());
+            checkbox.addEventListener('change', function() {
+                guardarFiltrosChecksPublicos();
                 actualizarCalendarioDinamico(obtenerEventosFiltradosActuales());
             });
             contenedor.appendChild(label);
@@ -1190,12 +1385,13 @@
             contentHeight: 'auto',
             expandRows: true,
             locale: 'es',
+            firstDay: 1,
             titleFormat: { year: 'numeric', month: 'short' },
             hiddenDays: diasAOcultarInicial,
             buttonText: {
                 today: 'Hoy',
                 dayGridMonth: 'Mes',
-                timeGridWeek: 'Semana',
+                listWeek: 'Semana',
                 listMonth: 'Lista'
             },
             headerToolbar: {
@@ -1205,12 +1401,14 @@
             },
             footerToolbar: {
                 start: 'today',
-                end: 'dayGridMonth,timeGridWeek,listMonth'
+                end: 'dayGridMonth,listWeek,listMonth'
             },
             eventTimeFormat: { hour: 'numeric', minute: '2-digit', meridiem: false, hour12: false, omitZeroMinute: true },
             events: eventosMapeados,
             eventDidMount: function(info) {
-                const colores = obtenerColorPorTipos(info.event.extendedProps && info.event.extendedProps.tipos ? info.event.extendedProps.tipos : []);
+                const extendedProps = info.event.extendedProps || {};
+                const resolvedColor = extendedProps.resolvedColor || extendedProps.ResolvedColor || '';
+                const colores = obtenerColorFromResolvedColor(resolvedColor);
                 const el = info.el;
                 if (!el) return;
                 el.style.backgroundColor = colores.backgroundColor;
@@ -1257,11 +1455,13 @@
             const estado = obtenerPropiedad(evento, 'estado');
             const distancias = obtenerPropiedad(evento, 'distancias');
             const imagen = obtenerPropiedad(evento, 'imagen');
+            const imagenResuelta = obtenerPropiedad(evento, 'resolvedimage');
             const descripcion = obtenerPropiedad(evento, 'descripcion');
             const inscripcionOnLine = obtenerPropiedad(evento, 'inscripciononline');
             const whatsapp = obtenerPropiedad(evento, 'whatsapp');
             const tiposArray = obtenerTiposArray(evento);
-            const colores = obtenerColorPorTipos(tiposArray);
+            const resolvedColor = obtenerPropiedad(evento, 'resolvedcolor') || obtenerPropiedad(evento, 'ResolvedColor') || '';
+            const colores = obtenerColorFromResolvedColor(resolvedColor);
             const claveBusqueda = construirClaveEvento(evento);
             const claveBusquedaId = encodeURIComponent(claveBusqueda);
 
@@ -1281,6 +1481,8 @@
                     estado: estado,
                     distancias: distancias,
                     imagen: imagen,
+                    resolvedImage: imagenResuelta,
+                    ResolvedColor: resolvedColor,
                     descripcion: descripcion,
                     inscripciononline: inscripcionOnLine,
                     inscripcionesonline: inscripcionOnLine,
@@ -1309,4 +1511,3 @@
         forzarRecalculoTamanoCalendario();
     }
 })();
-

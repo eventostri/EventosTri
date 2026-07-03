@@ -84,12 +84,11 @@ function cargar_scripts_deportivos() {
             true
         );
 
-        wp_localize_script('eventostri-admin-v2-script', 'eventostriAdminV2Config', array(
-            'exportCsvUrl' => esc_url_raw(wp_nonce_url(admin_url('admin-post.php?action=eventostri_export_csv'), 'eventostri_export_csv')),
-            'labels' => array(
-                'newEvent' => eventostri_get_calendar_label('new_event'),
-            ),
-        ));
+        wp_localize_script(
+            'eventostri-admin-v2-script',
+            'eventostriAdminV2Config',
+            eventostri_calendar_get_admin_script_config()
+        );
     }
 
     if ($cargar_calendario_publico) {
@@ -101,9 +100,11 @@ function cargar_scripts_deportivos() {
             true
         );
 
-        wp_localize_script('eventostri-calendario-script', 'eventostriCalendarioConfig', array(
-            'eventosUrl' => esc_url_raw(rest_url('eventostri/v1/eventos')),
-        ));
+        wp_localize_script(
+            'eventostri-calendario-script',
+            'eventostriCalendarioConfig',
+            eventostri_calendar_get_public_script_config()
+        );
     }
 }
 add_action('wp_enqueue_scripts', 'cargar_scripts_deportivos');
@@ -128,6 +129,19 @@ function eventostri_shortcode_admin_v2() {
     return ob_get_clean();
 }
 add_shortcode('eventostri_admin_v2', 'eventostri_shortcode_admin_v2');
+
+function eventostri_shortcode_branding_image() {
+    $logo_url = eventostri_calendar_get_logo_url();
+    if (!$logo_url) {
+        return '';
+    }
+
+    $site_name = get_bloginfo('name');
+    $alt = $site_name ? $site_name : 'EventosTri';
+
+    return '<div class="eventostri-header-branding"><img src="' . esc_url($logo_url) . '" alt="' . esc_attr($alt) . '" decoding="async"></div>';
+}
+add_shortcode('eventostri_branding_image', 'eventostri_shortcode_branding_image');
 
 function configurar_tema_deportivo() {
     load_theme_textdomain('eventostri-calendar', get_template_directory() . '/languages');
@@ -161,19 +175,41 @@ function eventostri_registrar_cpt_eventos() {
 }
 add_action('init', 'eventostri_registrar_cpt_eventos');
 
+function eventostri_evento_meta_keys() {
+    return array(
+        'Fecha_Hora',
+        'Lugar',
+        'Estado',
+        'Tipos',
+        'Distancias',
+        'Link',
+        'Imagen',
+        'Descripcion',
+        'Whatsapp',
+        'InscripcionOnLine',
+        'Organizador',
+        'VisibleEnCalendario'
+    );
+}
+
 function eventostri_map_post_to_array($post_id) {
     $visible_meta = get_post_meta($post_id, 'VisibleEnCalendario', true);
     $visible_en_calendario = eventostri_normalizar_visible_en_calendario($visible_meta, true);
+    $imagen = (string) get_post_meta($post_id, 'Imagen', true);
+    $tipos = (string) get_post_meta($post_id, 'Tipos', true);
 
     return array(
+        'Id' => (int) $post_id,
         'Titulo' => (string) get_the_title($post_id),
         'Fecha_Hora' => (string) get_post_meta($post_id, 'Fecha_Hora', true),
         'Lugar' => (string) get_post_meta($post_id, 'Lugar', true),
         'Estado' => (string) get_post_meta($post_id, 'Estado', true),
-        'Tipos' => (string) get_post_meta($post_id, 'Tipos', true),
+        'Tipos' => $tipos,
         'Distancias' => (string) get_post_meta($post_id, 'Distancias', true),
         'Link' => (string) get_post_meta($post_id, 'Link', true),
-        'Imagen' => (string) get_post_meta($post_id, 'Imagen', true),
+        'Imagen' => $imagen,
+        'ResolvedImage' => eventostri_calendar_resolve_event_image_url($imagen),
+        'ResolvedColor' => eventostri_get_event_color($tipos),
         'Descripcion' => (string) get_post_meta($post_id, 'Descripcion', true),
         'Whatsapp' => (string) get_post_meta($post_id, 'Whatsapp', true),
         'InscripcionOnLine' => (string) get_post_meta($post_id, 'InscripcionOnLine', true),
@@ -211,6 +247,25 @@ function eventostri_normalizar_visible_en_calendario($valor, $fallback) {
     return (bool) $fallback;
 }
 
+function eventostri_get_event_color($tipos_string) {
+    $tipo_colors = eventostri_calendar_get_tipo_colors();
+    $tipos = array_filter(array_map('trim', explode(',', (string) $tipos_string)));
+    
+    foreach ($tipos as $tipo) {
+        $tipo_lower = strtolower($tipo);
+        foreach ($tipo_colors['tipos'] as $configured_tipo) {
+            if (strtolower($configured_tipo['name']) === $tipo_lower) {
+                $color_value = trim($configured_tipo['color']);
+                if ($color_value !== '') {
+                    return $color_value;
+                }
+            }
+        }
+    }
+    
+    return $tipo_colors['default_color'];
+}
+
 function eventostri_normalizar_evento($ev) {
     if (!is_array($ev)) {
         return array();
@@ -235,6 +290,134 @@ function eventostri_normalizar_evento($ev) {
         'Organizador' => sanitize_text_field((string) ($ev['Organizador'] ?? '')),
         'VisibleEnCalendario' => $visible_en_calendario
     );
+}
+
+function eventostri_validar_evento_normalizado($evento) {
+    if (empty($evento['Titulo']) || empty($evento['Fecha_Hora'])) {
+        return new WP_Error(
+            'eventostri_evento_invalido',
+            'Los campos Titulo y Fecha_Hora son obligatorios.',
+            array('status' => 400)
+        );
+    }
+
+    return true;
+}
+
+function eventostri_extraer_evento_desde_request(WP_REST_Request $request) {
+    $payload = $request->get_json_params();
+    if (!is_array($payload)) {
+        return new WP_Error(
+            'eventostri_payload_invalido',
+            'El cuerpo debe ser un objeto JSON de evento.',
+            array('status' => 400)
+        );
+    }
+
+    $evento = eventostri_normalizar_evento($payload);
+    $validacion = eventostri_validar_evento_normalizado($evento);
+    if (is_wp_error($validacion)) {
+        return $validacion;
+    }
+
+    return $evento;
+}
+
+function eventostri_extraer_lista_eventos_desde_request(WP_REST_Request $request) {
+    $payload = $request->get_json_params();
+    if (is_array($payload) && array_key_exists('eventos', $payload)) {
+        $payload = $payload['eventos'];
+    }
+
+    if (!is_array($payload)) {
+        return new WP_Error(
+            'eventostri_payload_invalido',
+            'El cuerpo debe incluir un arreglo de eventos.',
+            array('status' => 400)
+        );
+    }
+
+    return $payload;
+}
+
+function eventostri_guardar_meta_evento($post_id, $evento) {
+    foreach (eventostri_evento_meta_keys() as $meta_key) {
+        if ($meta_key === 'VisibleEnCalendario') {
+            update_post_meta($post_id, $meta_key, $evento[$meta_key] ? '1' : '0');
+            continue;
+        }
+
+        update_post_meta($post_id, $meta_key, $evento[$meta_key]);
+    }
+}
+
+function eventostri_guardar_evento_post($evento, $post_id = 0) {
+    $post_data = array(
+        'post_type' => 'eventostri_evento',
+        'post_status' => 'publish',
+        'post_title' => $evento['Titulo']
+    );
+
+    if ($post_id > 0) {
+        $post_data['ID'] = $post_id;
+        $saved_id = wp_update_post($post_data, true);
+    } else {
+        $saved_id = wp_insert_post($post_data, true);
+    }
+
+    if (is_wp_error($saved_id)) {
+        return $saved_id;
+    }
+
+    eventostri_guardar_meta_evento((int) $saved_id, $evento);
+    return (int) $saved_id;
+}
+
+function eventostri_obtener_post_evento($post_id) {
+    $post = get_post((int) $post_id);
+    if (!$post || $post->post_type !== 'eventostri_evento') {
+        return new WP_Error(
+            'eventostri_evento_no_encontrado',
+            'No se encontro el evento solicitado.',
+            array('status' => 404)
+        );
+    }
+
+    return $post;
+}
+
+function eventostri_evento_dedupe_key($titulo, $fecha_hora, $lugar) {
+    return strtolower(trim((string) $titulo)) . '|' . trim((string) $fecha_hora) . '|' . strtolower(trim((string) $lugar));
+}
+
+function eventostri_obtener_indice_eventos_existentes() {
+    $consulta = new WP_Query(array(
+        'post_type' => 'eventostri_evento',
+        'post_status' => 'publish',
+        'posts_per_page' => -1,
+        'fields' => 'ids',
+        'no_found_rows' => true
+    ));
+
+    $indice = array();
+    foreach ($consulta->posts as $post_id) {
+        $indice[eventostri_evento_dedupe_key(
+            get_the_title($post_id),
+            get_post_meta($post_id, 'Fecha_Hora', true),
+            get_post_meta($post_id, 'Lugar', true)
+        )] = (int) $post_id;
+    }
+
+    return $indice;
+}
+
+function eventostri_fecha_evento_es_pasada($fecha_hora) {
+    $solo_fecha = substr(trim((string) $fecha_hora), 0, 10);
+    if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $solo_fecha)) {
+        return false;
+    }
+
+    return $solo_fecha < wp_date('Y-m-d');
 }
 
 function eventostri_rest_get_eventos() {
@@ -315,6 +498,141 @@ function eventostri_descargar_csv_eventos() {
 }
 add_action('admin_post_eventostri_export_csv', 'eventostri_descargar_csv_eventos');
 
+function eventostri_rest_create_evento(WP_REST_Request $request) {
+    $evento = eventostri_extraer_evento_desde_request($request);
+    if (is_wp_error($evento)) {
+        return $evento;
+    }
+
+    $post_id = eventostri_guardar_evento_post($evento);
+    if (is_wp_error($post_id)) {
+        return $post_id;
+    }
+
+    return rest_ensure_response(array(
+        'ok' => true,
+        'evento' => eventostri_map_post_to_array($post_id)
+    ));
+}
+
+function eventostri_rest_update_evento(WP_REST_Request $request) {
+    $post_id = (int) $request['id'];
+    $post = eventostri_obtener_post_evento($post_id);
+    if (is_wp_error($post)) {
+        return $post;
+    }
+
+    $evento = eventostri_extraer_evento_desde_request($request);
+    if (is_wp_error($evento)) {
+        return $evento;
+    }
+
+    $saved_id = eventostri_guardar_evento_post($evento, $post->ID);
+    if (is_wp_error($saved_id)) {
+        return $saved_id;
+    }
+
+    return rest_ensure_response(array(
+        'ok' => true,
+        'evento' => eventostri_map_post_to_array($saved_id)
+    ));
+}
+
+function eventostri_rest_delete_evento(WP_REST_Request $request) {
+    $post_id = (int) $request['id'];
+    $post = eventostri_obtener_post_evento($post_id);
+    if (is_wp_error($post)) {
+        return $post;
+    }
+
+    $deleted = wp_delete_post($post->ID, true);
+    if (!$deleted) {
+        return new WP_Error(
+            'eventostri_evento_no_eliminado',
+            'No se pudo eliminar el evento solicitado.',
+            array('status' => 500)
+        );
+    }
+
+    return rest_ensure_response(array(
+        'ok' => true,
+        'deleted_id' => (int) $post_id
+    ));
+}
+
+function eventostri_rest_import_eventos(WP_REST_Request $request) {
+    $items = eventostri_extraer_lista_eventos_desde_request($request);
+    if (is_wp_error($items)) {
+        return $items;
+    }
+
+    $existentes = eventostri_obtener_indice_eventos_existentes();
+    $vistos = array();
+    $insertados = 0;
+    $omitidos_duplicados = 0;
+    $eventos_creados = array();
+
+    foreach ($items as $item) {
+        $evento = eventostri_normalizar_evento($item);
+        $validacion = eventostri_validar_evento_normalizado($evento);
+        if (is_wp_error($validacion)) {
+            continue;
+        }
+
+        $dedupe_key = eventostri_evento_dedupe_key($evento['Titulo'], $evento['Fecha_Hora'], $evento['Lugar']);
+        if (isset($vistos[$dedupe_key]) || isset($existentes[$dedupe_key])) {
+            $omitidos_duplicados++;
+            continue;
+        }
+        $vistos[$dedupe_key] = true;
+
+        $post_id = eventostri_guardar_evento_post($evento);
+        if (is_wp_error($post_id)) {
+            continue;
+        }
+
+        $existentes[$dedupe_key] = $post_id;
+        $eventos_creados[] = eventostri_map_post_to_array($post_id);
+        $insertados++;
+    }
+
+    return rest_ensure_response(array(
+        'ok' => true,
+        'insertados' => $insertados,
+        'omitidos_duplicados' => $omitidos_duplicados,
+        'eventos' => $eventos_creados
+    ));
+}
+
+function eventostri_rest_delete_past_eventos() {
+    $consulta = new WP_Query(array(
+        'post_type' => 'eventostri_evento',
+        'post_status' => 'publish',
+        'posts_per_page' => -1,
+        'fields' => 'ids',
+        'no_found_rows' => true
+    ));
+
+    $deleted_ids = array();
+    foreach ($consulta->posts as $post_id) {
+        $fecha_hora = get_post_meta($post_id, 'Fecha_Hora', true);
+        if (!eventostri_fecha_evento_es_pasada($fecha_hora)) {
+            continue;
+        }
+
+        $deleted = wp_delete_post((int) $post_id, true);
+        if ($deleted) {
+            $deleted_ids[] = (int) $post_id;
+        }
+    }
+
+    return rest_ensure_response(array(
+        'ok' => true,
+        'deleted_ids' => $deleted_ids,
+        'deleted_count' => count($deleted_ids)
+    ));
+}
+
 function eventostri_rest_sync_eventos(WP_REST_Request $request) {
     $lock_key = 'eventostri_sync_lock';
     $lock_ttl_seconds = 30;
@@ -357,49 +675,21 @@ function eventostri_rest_sync_eventos(WP_REST_Request $request) {
 
         foreach ($items as $item) {
             $evento = eventostri_normalizar_evento($item);
-
-            if (empty($evento['Titulo']) || empty($evento['Fecha_Hora'])) {
+            $validacion = eventostri_validar_evento_normalizado($evento);
+            if (is_wp_error($validacion)) {
                 continue;
             }
 
-            $dedupe_key = strtolower(trim($evento['Titulo'])) . '|' . trim($evento['Fecha_Hora']);
+            $dedupe_key = eventostri_evento_dedupe_key($evento['Titulo'], $evento['Fecha_Hora'], $evento['Lugar']);
             if (isset($vistos[$dedupe_key])) {
                 $omitidos_duplicados++;
                 continue;
             }
             $vistos[$dedupe_key] = true;
 
-            $post_id = wp_insert_post(array(
-                'post_type' => 'eventostri_evento',
-                'post_status' => 'publish',
-                'post_title' => $evento['Titulo']
-            ), true);
-
+            $post_id = eventostri_guardar_evento_post($evento);
             if (is_wp_error($post_id)) {
                 continue;
-            }
-
-            $campos_meta = array(
-                'Fecha_Hora',
-                'Lugar',
-                'Estado',
-                'Tipos',
-                'Distancias',
-                'Link',
-                'Imagen',
-                'Descripcion',
-                'Whatsapp',
-                'InscripcionOnLine',
-                'Organizador',
-                'VisibleEnCalendario'
-            );
-
-            foreach ($campos_meta as $meta_key) {
-                if ($meta_key === 'VisibleEnCalendario') {
-                    update_post_meta($post_id, $meta_key, $evento[$meta_key] ? '1' : '0');
-                } else {
-                    update_post_meta($post_id, $meta_key, $evento[$meta_key]);
-                }
             }
 
             $insertados++;
@@ -478,19 +768,54 @@ function eventostri_rest_auth_status() {
     return rest_ensure_response($response);
 }
 
+function eventostri_rest_eventos_permission_check() {
+    return current_user_can('edit_posts');
+}
+
 function eventostri_registrar_rest_routes() {
     register_rest_route('eventostri/v1', '/eventos', array(
-        'methods' => WP_REST_Server::READABLE,
-        'callback' => 'eventostri_rest_get_eventos',
-        'permission_callback' => '__return_true'
+        array(
+            'methods' => WP_REST_Server::READABLE,
+            'callback' => 'eventostri_rest_get_eventos',
+            'permission_callback' => '__return_true'
+        ),
+        array(
+            'methods' => WP_REST_Server::CREATABLE,
+            'callback' => 'eventostri_rest_create_evento',
+            'permission_callback' => 'eventostri_rest_eventos_permission_check'
+        )
+    ));
+
+    register_rest_route('eventostri/v1', '/eventos/(?P<id>\d+)', array(
+        array(
+            'methods' => WP_REST_Server::EDITABLE,
+            'callback' => 'eventostri_rest_update_evento',
+            'permission_callback' => 'eventostri_rest_eventos_permission_check'
+        ),
+        array(
+            'methods' => WP_REST_Server::DELETABLE,
+            'callback' => 'eventostri_rest_delete_evento',
+            'permission_callback' => 'eventostri_rest_eventos_permission_check'
+        )
+    ));
+
+    register_rest_route('eventostri/v1', '/eventos/import', array(
+        'methods' => WP_REST_Server::CREATABLE,
+        'callback' => 'eventostri_rest_import_eventos',
+        'permission_callback' => 'eventostri_rest_eventos_permission_check'
+    ));
+
+    register_rest_route('eventostri/v1', '/eventos/delete-past', array(
+        'methods' => WP_REST_Server::CREATABLE,
+        'callback' => 'eventostri_rest_delete_past_eventos',
+        'permission_callback' => 'eventostri_rest_eventos_permission_check'
     ));
 
     register_rest_route('eventostri/v1', '/eventos/sync', array(
         'methods' => WP_REST_Server::CREATABLE,
         'callback' => 'eventostri_rest_sync_eventos',
-        'permission_callback' => function () {
-            return current_user_can('edit_posts');
-        }
+        // Deprecated compatibility endpoint. Prefer single-item CRUD and explicit batch routes.
+        'permission_callback' => 'eventostri_rest_eventos_permission_check'
     ));
 
     register_rest_route('eventostri/v1', '/auth-status', array(
