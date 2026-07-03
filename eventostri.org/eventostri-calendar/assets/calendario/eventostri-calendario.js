@@ -188,7 +188,7 @@
         });
         const horaFmt = hora.replace(/\s/g, '').replace(/\./g, '').replace(/(?<=\d)(AM|PM)/i, ' $1');
 
-        return diaSemanaFmt + ', ' + diaFmt + ' de ' + mesFmt + ' de ' + anio + ' Â· ' + horaFmt;
+        return diaSemanaFmt + ', ' + diaFmt + ' de ' + mesFmt + ' de ' + anio + ' · ' + horaFmt;
     }
 
     function normalizarTextoBusqueda(valor) {
@@ -666,7 +666,6 @@
             '<label style="display:flex;flex-direction:column;font-size:12px;">Distancia máxima (km)<input type="number" step="0.1" min="0" id="evento-search-filter-distance-max" placeholder="42"></label>',
             '<label style="display:flex;flex-direction:column;font-size:12px;">Organizador<input type="text" id="evento-search-filter-organizer" placeholder="Nombre organizador"></label>',
             '<label style="display:flex;flex-direction:column;font-size:12px;">Estado<input type="text" id="evento-search-filter-status" placeholder="YUC/CAM/QROO"></label>',
-            '<label style="display:flex;flex-direction:column;font-size:12px;">Max distancia (km)<input type="number" step="0.1" min="0" id="evento-search-filter-max-distance" placeholder="Opcional"></label>',
             '<div style="display:flex;align-items:end;gap:8px;"><span id="evento-search-filter-badge" style="display:inline-flex;align-items:center;justify-content:center;min-width:22px;height:22px;padding:0 8px;border-radius:999px;background:#e2e8f0;font-size:12px;">0</span><button type="button" id="evento-search-filter-clear" class="button">Limpiar filtros</button></div>',
             '</div>',
             '<input type="text" id="evento-search-modal-input" class="evento-search-modal-input" autocomplete="off" placeholder="Buscar por nombre de evento..." aria-label="Buscar por nombre de evento">',
@@ -674,12 +673,6 @@
             '<ul id="evento-search-modal-results" class="evento-search-modal-results" role="listbox" aria-label="Resultados de busqueda"></ul>',
             '</div>'
         ].join('');
-
-        overlay.addEventListener('click', function(e) {
-            if (e.target === overlay) {
-                cerrarModalBusquedaEventos();
-            }
-        });
 
         document.body.appendChild(overlay);
         return overlay;
@@ -851,7 +844,7 @@
         }
 
         if (!terminoVisible) {
-            elementos.status.textContent = 'Escribe para buscar eventos por nombre.' + (filtrosActivos ? (' Filtros activos: ' + filtrosActivos + '.') : '');
+            elementos.status.textContent = filtrosActivos ? ('Filtros activos: ' + filtrosActivos + '.') : '';
             indiceActivoBusquedaModal = -1;
             return;
         }
@@ -873,7 +866,7 @@
             const titulo = detectarTitulo(evento);
             const fecha = formatearFecha(detectarFecha(evento));
             const lugar = obtenerPropiedad(evento, 'lugar') || 'Sin lugar';
-            const tipos = obtenerTiposArray(evento).join(' Â· ') || 'Sin tipo';
+            const tipos = obtenerTiposArray(evento).join(' · ') || 'Sin tipo';
 
             const li = document.createElement('li');
             li.className = 'evento-search-result-item';
@@ -890,7 +883,7 @@
                 '<span class="evento-search-result-type"></span>'
             ].join('');
             boton.querySelector('.evento-search-result-title').textContent = titulo;
-            boton.querySelector('.evento-search-result-meta').textContent = (fecha || 'Fecha pendiente') + ' Â· ' + lugar;
+            boton.querySelector('.evento-search-result-meta').textContent = (fecha || 'Fecha pendiente') + ' · ' + lugar;
             boton.querySelector('.evento-search-result-type').textContent = tipos;
             boton.addEventListener('mouseenter', function() {
                 actualizarIndiceActivoBusquedaModal(indice);
@@ -925,8 +918,7 @@
         elementos.input.value = terminoBusquedaModal;
         renderizarResultadosBusquedaModal();
         setTimeout(function() {
-            elementos.input.focus();
-            elementos.input.select();
+            elementos.filterDateFrom.focus();
         }, 0);
     }
 

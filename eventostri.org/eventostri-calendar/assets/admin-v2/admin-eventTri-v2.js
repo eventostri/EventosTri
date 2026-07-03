@@ -910,7 +910,6 @@
       '<label style="display:flex;flex-direction:column;font-size:12px;">Distancia máxima (km)<input type="number" step="0.1" min="0" id="evento-search-admin-filter-distance-max"></label>',
       '<label style="display:flex;flex-direction:column;font-size:12px;">Organizador<input type="text" id="evento-search-admin-filter-organizer"></label>',
       '<label style="display:flex;flex-direction:column;font-size:12px;">Estado<input type="text" id="evento-search-admin-filter-status" placeholder="YUC/CAM/QROO"></label>',
-      '<label style="display:flex;flex-direction:column;font-size:12px;">Max distancia (km)<input type="number" step="0.1" min="0" id="evento-search-admin-filter-max-distance"></label>',
       '<div style="display:flex;align-items:end;gap:8px;"><span id="evento-search-admin-filter-badge" style="display:inline-flex;align-items:center;justify-content:center;min-width:22px;height:22px;padding:0 8px;border-radius:999px;background:#e2e8f0;font-size:12px;">0</span><button type="button" id="evento-search-admin-filter-clear" class="button">Limpiar filtros</button></div>',
       '</div>',
       '<input type="text" id="evento-search-modal-admin-input" class="evento-search-modal-input" autocomplete="off" placeholder="Buscar por nombre de evento..." aria-label="Buscar por nombre de evento">',
@@ -918,10 +917,6 @@
       '<ul id="evento-search-modal-admin-results" class="evento-search-modal-results" role="listbox" aria-label="Resultados de busqueda en admin"></ul>',
       '</div>'
     ].join('');
-
-    overlay.addEventListener('click', e => {
-      if (e.target === overlay) cerrarModalBusquedaAdmin();
-    });
 
     document.body.appendChild(overlay);
     return overlay;
@@ -941,7 +936,6 @@
       filterDistanceMax: modal.querySelector('#evento-search-admin-filter-distance-max'),
       filterOrganizer: modal.querySelector('#evento-search-admin-filter-organizer'),
       filterStatus: modal.querySelector('#evento-search-admin-filter-status'),
-      filterMaxDistance: modal.querySelector('#evento-search-admin-filter-max-distance'),
       filterBadge: modal.querySelector('#evento-search-admin-filter-badge'),
       filterClear: modal.querySelector('#evento-search-admin-filter-clear')
     };
@@ -997,7 +991,7 @@
     if (elementos.filterBadge) elementos.filterBadge.textContent = String(filtrosActivos);
 
     if (!terminoVisible) {
-      elementos.status.textContent = 'Escribe para buscar eventos por nombre.' + (filtrosActivos ? (' Filtros activos: ' + filtrosActivos + '.') : '');
+      elementos.status.textContent = filtrosActivos ? ('Filtros activos: ' + filtrosActivos + '.') : '';
       indiceActivoBusquedaModalAdmin = -1;
       return;
     }
@@ -1041,13 +1035,11 @@
     elementos.filterDistanceMax.value = filtrosAvanzadosBusquedaAdmin.distanceMax || '';
     elementos.filterOrganizer.value = filtrosAvanzadosBusquedaAdmin.organizer || '';
     elementos.filterStatus.value = filtrosAvanzadosBusquedaAdmin.status || '';
-    elementos.filterMaxDistance.value = filtrosAvanzadosBusquedaAdmin.maxDistance || '';
     terminoBusquedaModalAdmin = String(valorInicial || '').trim();
     elementos.input.value = terminoBusquedaModalAdmin;
     renderizarResultadosBusquedaAdminModal();
     setTimeout(() => {
-      elementos.input.focus();
-      elementos.input.select();
+      elementos.filterDateFrom.focus();
     }, 0);
   }
 
@@ -1081,7 +1073,7 @@
         distanceMax: String(elementos.filterDistanceMax.value || '').trim(),
         organizer: String(elementos.filterOrganizer.value || '').trim(),
         status: String(elementos.filterStatus.value || '').trim(),
-        maxDistance: String(elementos.filterMaxDistance.value || '').trim()
+        maxDistance: ''
       };
       guardarJSONLocalStorage(CLAVE_FILTROS_AVANZADOS_ADMIN, filtrosAvanzadosBusquedaAdmin);
       renderizarResultadosBusquedaAdminModal();
@@ -1123,8 +1115,7 @@
       elementos.filterDistanceMin,
       elementos.filterDistanceMax,
       elementos.filterOrganizer,
-      elementos.filterStatus,
-      elementos.filterMaxDistance
+      elementos.filterStatus
     ].forEach(control => {
       if (!control) return;
       control.addEventListener('input', actualizarFiltros);
@@ -1139,7 +1130,6 @@
         elementos.filterDistanceMax.value = '';
         elementos.filterOrganizer.value = '';
         elementos.filterStatus.value = '';
-        elementos.filterMaxDistance.value = '';
         actualizarFiltros();
       });
     }
