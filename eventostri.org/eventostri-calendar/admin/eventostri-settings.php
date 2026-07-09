@@ -230,7 +230,13 @@ function eventostri_calendar_get_resolved_settings() {
 function eventostri_calendar_get_public_script_config() {
     return array(
         'rest' => array(
-            'eventosUrl' => esc_url_raw(rest_url('eventostri/v1/eventos')),
+            'eventosUrl' => eventostri_calendar_get_events_rest_url('public'),
+            'authStatusUrl' => esc_url_raw(rest_url('eventostri/v1/auth-status')),
+            'favoritesUrl' => esc_url_raw(rest_url('eventostri/v1/favorites')),
+            'favoritesToggleUrl' => esc_url_raw(rest_url('eventostri/v1/favorites/toggle')),
+            'favoritesMergeUrl' => esc_url_raw(rest_url('eventostri/v1/favorites/merge')),
+            'notificationPreferencesUrl' => esc_url_raw(rest_url('eventostri/v1/notification-preferences')),
+            'calendarFeedUrl' => eventostri_calendar_get_feed_ics_url(),
         ),
         'settings' => eventostri_calendar_get_resolved_settings(),
     );
@@ -239,7 +245,7 @@ function eventostri_calendar_get_public_script_config() {
 function eventostri_calendar_get_admin_script_config() {
     return array(
         'rest' => array(
-            'eventosUrl' => esc_url_raw(rest_url('eventostri/v1/eventos')),
+            'eventosUrl' => eventostri_calendar_get_events_rest_url('admin'),
             'eventosImportUrl' => esc_url_raw(rest_url('eventostri/v1/eventos/import')),
             'eventosDeletePastUrl' => esc_url_raw(rest_url('eventostri/v1/eventos/delete-past')),
             'authStatusUrl' => esc_url_raw(rest_url('eventostri/v1/auth-status')),
@@ -373,6 +379,26 @@ function eventostri_register_calendar_settings() {
             'default' => wp_json_encode(eventostri_calendar_default_tipo_colors(), JSON_UNESCAPED_SLASHES),
         )
     );
+
+    register_setting(
+        'eventostri_calendar_settings',
+        'eventostri_calendar_integration_settings',
+        array(
+            'type' => 'array',
+            'sanitize_callback' => 'eventostri_calendar_sanitize_integration_settings',
+            'default' => eventostri_calendar_default_integration_settings(),
+        )
+    );
+
+    register_setting(
+        'eventostri_calendar_settings',
+        'eventostri_notification_settings',
+        array(
+            'type' => 'array',
+            'sanitize_callback' => 'eventostri_notification_sanitize_settings',
+            'default' => eventostri_notification_default_settings(),
+        )
+    );
 }
 add_action('admin_init', 'eventostri_register_calendar_settings');
 
@@ -406,6 +432,7 @@ function eventostri_render_calendar_settings_page() {
 
     $colors = eventostri_calendar_get_colors();
     $labels = eventostri_calendar_get_labels();
+    $notification_settings = eventostri_notification_get_settings();
     $default_event_image = eventostri_calendar_get_default_event_image_url();
     $defaults = eventostri_calendar_default_colors();
     
@@ -582,6 +609,58 @@ function eventostri_render_calendar_settings_page() {
                                     Evento
                                 </div>
                         </div>
+                    </td>
+                </tr>
+
+                <tr>
+                    <th scope="row"><?php echo esc_html__('Notificaciones', 'eventostri-calendar'); ?></th>
+                    <td>
+                        <fieldset>
+                            <p>
+                                <label>
+                                    <input type="checkbox" name="eventostri_notification_settings[favorite_day_before_enabled]" value="1" <?php checked(!empty($notification_settings['favorite_day_before_enabled'])); ?>>
+                                    <?php echo esc_html__('Activar recordatorios de favoritos un dia antes', 'eventostri-calendar'); ?>
+                                </label>
+                            </p>
+                            <p>
+                                <label>
+                                    <input type="checkbox" name="eventostri_notification_settings[favorite_day_of_enabled]" value="1" <?php checked(!empty($notification_settings['favorite_day_of_enabled'])); ?>>
+                                    <?php echo esc_html__('Activar recordatorios de favoritos el mismo dia', 'eventostri-calendar'); ?>
+                                </label>
+                            </p>
+                            <p>
+                                <label><?php echo esc_html__('Hora envio dia antes (0-23)', 'eventostri-calendar'); ?><br>
+                                    <input type="number" min="0" max="23" name="eventostri_notification_settings[send_hour_day_before]" value="<?php echo esc_attr((int) $notification_settings['send_hour_day_before']); ?>" class="small-text">
+                                </label>
+                            </p>
+                            <p>
+                                <label><?php echo esc_html__('Hora envio dia del evento (0-23)', 'eventostri-calendar'); ?><br>
+                                    <input type="number" min="0" max="23" name="eventostri_notification_settings[send_hour_day_of]" value="<?php echo esc_attr((int) $notification_settings['send_hour_day_of']); ?>" class="small-text">
+                                </label>
+                            </p>
+                            <p>
+                                <label><?php echo esc_html__('Tamano de lote por ejecucion', 'eventostri-calendar'); ?><br>
+                                    <input type="number" min="1" max="500" name="eventostri_notification_settings[batch_size]" value="<?php echo esc_attr((int) $notification_settings['batch_size']); ?>" class="small-text">
+                                </label>
+                            </p>
+                            <p>
+                                <label><?php echo esc_html__('Correos administradores (uno por linea o separados por coma)', 'eventostri-calendar'); ?><br>
+                                    <textarea name="eventostri_notification_settings[admin_recipients]" rows="4" class="large-text"><?php echo esc_textarea(implode("\n", (array) $notification_settings['admin_recipients'])); ?></textarea>
+                                </label>
+                            </p>
+                            <p>
+                                <label>
+                                    <input type="checkbox" name="eventostri_notification_settings[admin_notify_on_publish]" value="1" <?php checked(!empty($notification_settings['admin_notify_on_publish'])); ?>>
+                                    <?php echo esc_html__('Notificar a administradores cuando se publica un evento', 'eventostri-calendar'); ?>
+                                </label>
+                            </p>
+                            <p>
+                                <label>
+                                    <input type="checkbox" name="eventostri_notification_settings[admin_notify_on_edit]" value="1" <?php checked(!empty($notification_settings['admin_notify_on_edit'])); ?>>
+                                    <?php echo esc_html__('Notificar a administradores cuando se edita un evento', 'eventostri-calendar'); ?>
+                                </label>
+                            </p>
+                        </fieldset>
                     </td>
                 </tr>
             </table>

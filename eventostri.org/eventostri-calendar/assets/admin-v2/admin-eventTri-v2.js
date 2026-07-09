@@ -26,6 +26,7 @@
   let sincronizacionEnCurso = false;
   let filtrosTipoSeleccionados = new Set();
   let filtrosLugarSeleccionados = new Set();
+  let interaccionesDropdownFiltrosAdminInicializadas = false;
   let rangoVisibleMes = null;
   let terminoBusquedaAdmin = '';
   let terminoBusquedaModalAdmin = '';
@@ -192,7 +193,29 @@
   }
 
   function construirUrlEventoPorId(id) {
-    return apiEventosUrl + '/' + encodeURIComponent(String(id));
+    try {
+      const parsed = new URL(apiEventosUrl, window.location.origin);
+      const basePath = parsed.pathname.replace(/\/+$/, '');
+      parsed.pathname = basePath + '/' + encodeURIComponent(String(id));
+      return parsed.toString();
+    } catch (error) {
+      const rawUrl = String(apiEventosUrl || '');
+      const queryIndex = rawUrl.indexOf('?');
+      const base = (queryIndex >= 0 ? rawUrl.slice(0, queryIndex) : rawUrl).replace(/\/+$/, '');
+      const query = queryIndex >= 0 ? rawUrl.slice(queryIndex) : '';
+      return base + '/' + encodeURIComponent(String(id)) + query;
+    }
+  }
+
+  function anexarParametroUrl(url, key, value) {
+    try {
+      const parsed = new URL(url, window.location.origin);
+      parsed.searchParams.set(key, String(value));
+      return parsed.toString();
+    } catch (error) {
+      const separador = String(url).includes('?') ? '&' : '?';
+      return String(url) + separador + encodeURIComponent(key) + '=' + encodeURIComponent(String(value));
+    }
   }
 
   async function enviarSolicitudJsonAutenticada(url, opciones = {}, mensajeError) {
@@ -394,9 +417,9 @@
   }
 
   function crearEventoNormalizado(origen = {}) {
-    const id = normalizarId(obtenerPropiedad(origen, 'Id'));
+    const id = normalizarId(obtenerPropiedad(origen, 'id'));
     return {
-      Id: id,
+      id: id,
       _localId: origen._localId || (id !== null ? ('wp-' + id) : crypto.randomUUID()),
       Titulo: String(obtenerPropiedad(origen, 'Titulo') || 'Evento deportivo').trim(),
       Fecha_Hora: String(obtenerPropiedad(origen, 'Fecha_Hora') || '').trim(),
@@ -416,7 +439,7 @@
   }
 
   function obtenerIdEvento(evento) {
-    return normalizarId(obtenerPropiedad(evento, 'Id'));
+    return normalizarId(obtenerPropiedad(evento, 'id'));
   }
 
   function obtenerClaveEventoCalendario(evento) {
@@ -429,7 +452,7 @@
     if (normalizado === null) {
       return -1;
     }
-    return eventos.findIndex(ev => ev.Id === normalizado);
+    return eventos.findIndex(ev => ev.id === normalizado);
   }
 
   function buscarEventoPorClaveCalendario(clave) {
@@ -438,8 +461,8 @@
 
   function guardarEventoLocal(evento) {
     const normalizado = crearEventoNormalizado(evento);
-    const index = normalizado.Id !== null
-      ? encontrarIndiceEventoPorId(normalizado.Id)
+    const index = normalizado.id !== null
+      ? encontrarIndiceEventoPorId(normalizado.id)
       : eventos.findIndex(ev => ev._localId === normalizado._localId);
     const anterior = index >= 0 ? eventos[index] : null;
 
@@ -665,6 +688,48 @@
     });
   }
 
+  function cerrarDropdownsFiltrosAdmin(exceptoDropdown) {
+    const abiertos = document.querySelectorAll('.evento-filter-dropdown.is-open');
+    abiertos.forEach(dropdown => {
+      if (exceptoDropdown && dropdown === exceptoDropdown) {
+        return;
+      }
+      dropdown.classList.remove('is-open');
+      const trigger = dropdown.querySelector('.evento-filter-dropdown-trigger');
+      const panel = dropdown.querySelector('.evento-filter-dropdown-panel');
+      if (trigger) {
+        trigger.setAttribute('aria-expanded', 'false');
+      }
+      if (panel) {
+        panel.setAttribute('hidden', 'hidden');
+      }
+    });
+  }
+
+  function inicializarInteraccionesDropdownFiltrosAdmin() {
+    if (interaccionesDropdownFiltrosAdminInicializadas) {
+      return;
+    }
+    interaccionesDropdownFiltrosAdminInicializadas = true;
+
+    document.addEventListener('click', function(e) {
+      const target = e.target;
+      if (!(target instanceof Element)) {
+        cerrarDropdownsFiltrosAdmin();
+        return;
+      }
+      if (!target.closest('.evento-filter-dropdown')) {
+        cerrarDropdownsFiltrosAdmin();
+      }
+    });
+
+    document.addEventListener('keydown', function(e) {
+      if (String(e.key || '') === 'Escape') {
+        cerrarDropdownsFiltrosAdmin();
+      }
+    });
+  }
+
   function generarCheckboxes(eventosBase, propiedad, contenedorId, seleccionados) {
     const contenedor = qs(contenedorId);
     if (!contenedor) return;
@@ -694,12 +759,91 @@
       opciones = ordenarOpcionesLugar(opciones, conteo);
     }
     contenedor.innerHTML = '';
+    contenedor.classList.add('evento-filter-root');
+
+    const etiquetaFiltro = propiedad === 'Lugar' ? 'Lugar' : 'Tipo';
+    const dropdown = document.createElement('div');
+    dropdown.className = 'evento-filter-dropdown';
+
+    const trigger = document.createElement('button');
+    trigger.type = 'button';
+    trigger.className = 'evento-filter-dropdown-trigger';
+    trigger.setAttribute('aria-haspopup', 'true');
+    trigger.setAttribute('aria-expanded', 'false');
+
+    const panel = document.createElement('div');
+    panel.className = 'evento-filter-dropdown-panel';
+    panel.setAttribute('hidden', 'hidden');
+
+    const actions = document.createElement('div');
+    actions.className = 'evento-filter-dropdown-actions';
+
+    const seleccionarTodoBtn = document.createElement('button');
+    seleccionarTodoBtn.type = 'button';
+    seleccionarTodoBtn.className = 'evento-filter-dropdown-action';
+    seleccionarTodoBtn.textContent = 'Seleccionar todo';
+
+    const limpiarBtn = document.createElement('button');
+    limpiarBtn.type = 'button';
+    limpiarBtn.className = 'evento-filter-dropdown-action';
+    limpiarBtn.textContent = 'Limpiar';
+
+    actions.appendChild(seleccionarTodoBtn);
+    actions.appendChild(limpiarBtn);
+
+    const lista = document.createElement('div');
+    lista.className = 'evento-filter-dropdown-list';
+
+    function actualizarResumenTrigger() {
+      const checkedCount = lista.querySelectorAll('input:checked').length;
+      if (opciones.length === 0) {
+        trigger.textContent = etiquetaFiltro + ' (Sin opciones)';
+        return;
+      }
+      if (checkedCount === 0) {
+        trigger.textContent = etiquetaFiltro + ' (Todos)';
+        return;
+      }
+      trigger.textContent = etiquetaFiltro + ' (' + checkedCount + ')';
+    }
+
+    function aplicarSeleccionMasiva(checked) {
+      const checks = lista.querySelectorAll('input[type="checkbox"]');
+      if (propiedad === 'Tipos') {
+        filtrosTipoSeleccionados.clear();
+      } else {
+        filtrosLugarSeleccionados.clear();
+      }
+
+      checks.forEach(input => {
+        input.checked = checked;
+        if (checked) {
+          if (propiedad === 'Tipos') {
+            filtrosTipoSeleccionados.add(input.value);
+          } else {
+            filtrosLugarSeleccionados.add(input.value);
+          }
+        }
+      });
+
+      guardarFiltrosChecksAdmin();
+      actualizarResumenTrigger();
+      renderCalendario();
+    }
 
     opciones.forEach(opcion => {
       const label = document.createElement('label');
       label.className = 'checkbox-label';
-      label.innerHTML = '<input type="checkbox" value="' + escapeHtml(opcion) + '" style="margin-right:8px;"> <span>' + escapeHtml(opcion) + ' (' + conteo[opcion] + ')</span>';
-      const check = label.querySelector('input');
+      const row = document.createElement('div');
+      const check = document.createElement('input');
+      const text = document.createElement('span');
+      check.type = 'checkbox';
+      check.value = opcion;
+      check.style.marginRight = '8px';
+      text.textContent = opcion + ' (' + conteo[opcion] + ')';
+      row.appendChild(check);
+      row.appendChild(text);
+      label.appendChild(row);
       check.checked = seleccionados.has(opcion);
 
       check.addEventListener('change', () => {
@@ -709,11 +853,47 @@
           seleccionados.delete(opcion);
         }
         guardarFiltrosChecksAdmin();
+        actualizarResumenTrigger();
         renderCalendario();
       });
 
-      contenedor.appendChild(label);
+      lista.appendChild(label);
     });
+
+    trigger.addEventListener('click', function(e) {
+      e.preventDefault();
+      e.stopPropagation();
+      const abrir = !dropdown.classList.contains('is-open');
+      cerrarDropdownsFiltrosAdmin(dropdown);
+      dropdown.classList.toggle('is-open', abrir);
+      trigger.setAttribute('aria-expanded', abrir ? 'true' : 'false');
+      if (abrir) {
+        panel.removeAttribute('hidden');
+      } else {
+        panel.setAttribute('hidden', 'hidden');
+      }
+    });
+
+    panel.addEventListener('click', function(e) {
+      e.stopPropagation();
+    });
+
+    seleccionarTodoBtn.addEventListener('click', function(e) {
+      e.preventDefault();
+      aplicarSeleccionMasiva(true);
+    });
+
+    limpiarBtn.addEventListener('click', function(e) {
+      e.preventDefault();
+      aplicarSeleccionMasiva(false);
+    });
+
+    panel.appendChild(actions);
+    panel.appendChild(lista);
+    dropdown.appendChild(trigger);
+    dropdown.appendChild(panel);
+    contenedor.appendChild(dropdown);
+    actualizarResumenTrigger();
   }
 
   function eventoPasaFiltros(ev) {
@@ -1482,14 +1662,14 @@
 
   function abrirModalEvento(evento, creando = false) {
     const normalizado = crearEventoNormalizado(evento);
-    editandoId = creando ? null : normalizado.Id;
+    editandoId = creando ? null : normalizado.id;
     cargarFormulario(normalizado, creando);
     abrirModal();
   }
 
   function leerEventoDesdeFormulario() {
     return crearEventoNormalizado({
-      Id: editandoId,
+      id: editandoId,
       _localId: editandoId ? ('wp-' + editandoId) : crypto.randomUUID(),
       Titulo: qs('fTituloV2').value,
       Fecha_Hora: qs('fFechaV2').value,
@@ -1527,13 +1707,13 @@
   }
 
   async function actualizarEventoWordPressAPI(evento) {
-    if (evento.Id === null) {
-      registrarLog('No se puede actualizar un evento sin Id persistido.', 'error');
+    if (evento.id === null) {
+      registrarLog('No se puede actualizar un evento sin id persistido.', 'error');
       return null;
     }
 
     const data = await enviarSolicitudJsonAutenticada(
-      construirUrlEventoPorId(evento.Id),
+      construirUrlEventoPorId(evento.id),
       {
         method: 'PUT',
         body: JSON.stringify(serializarEventoParaApi(evento))
@@ -1551,13 +1731,13 @@
   }
 
   async function eliminarEventoWordPressAPI(evento) {
-    if (!evento || evento.Id === null) {
-      registrarLog('No se puede eliminar un evento sin Id persistido.', 'error');
+    if (!evento || evento.id === null) {
+      registrarLog('No se puede eliminar un evento sin id persistido.', 'error');
       return null;
     }
 
     const data = await enviarSolicitudJsonAutenticada(
-      construirUrlEventoPorId(evento.Id),
+      construirUrlEventoPorId(evento.id),
       { method: 'DELETE' },
       'Error al eliminar evento en WordPress'
     );
@@ -1591,12 +1771,12 @@
       return;
     }
 
-    const eventoAnterior = evento.Id !== null
-      ? eventos.find(ev => ev.Id === evento.Id) || null
+    const eventoAnterior = evento.id !== null
+      ? eventos.find(ev => ev.id === evento.id) || null
       : null;
 
     deshabilitarAccionesModal(true);
-    const guardado = evento.Id !== null
+    const guardado = evento.id !== null
       ? await actualizarEventoWordPressAPI(evento)
       : await crearEventoWordPressAPI(evento);
 
@@ -1650,6 +1830,7 @@
   function generarFiltros() {
     generarCheckboxes(eventos, 'Tipos', 'filtro-tipo-container-v2', filtrosTipoSeleccionados);
     generarCheckboxes(eventos, 'Lugar', 'filtro-lugar-container-v2', filtrosLugarSeleccionados);
+    inicializarInteraccionesDropdownFiltrosAdmin();
   }
 
   function parseCsvConLineas(textoCsv) {
@@ -1888,7 +2069,7 @@
     }
 
     const deletedIds = new Set((resultado.deleted_ids || []).map(id => normalizarId(id)).filter(id => id !== null));
-    eventos = eventos.filter(ev => ev.Id === null || !deletedIds.has(ev.Id));
+    eventos = eventos.filter(ev => ev.id === null || !deletedIds.has(ev.id));
     actualizarContador();
     generarFiltros();
     renderCalendario();
@@ -1899,7 +2080,7 @@
     registrarLog('Solicitando eventos desde WordPress API...', 'info');
 
     try {
-      const res = await fetch(apiEventosUrl + '?_ts=' + Date.now(), {
+      const res = await fetch(anexarParametroUrl(apiEventosUrl, '_ts', Date.now()), {
         method: 'GET',
         cache: 'no-store',
         credentials: 'same-origin'
@@ -1996,7 +2177,8 @@
 
     modal.addEventListener('click', (event) => {
       if (event.target === modal) {
-        cerrarModal();
+        // Keep the form open on backdrop click to avoid accidental data loss.
+        event.preventDefault();
       }
     });
 
