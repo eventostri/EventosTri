@@ -22,11 +22,20 @@
     const CLAVE_ANALITICA_BUSQUEDA = '__eventostriSearchAnalytics';
     const CLAVE_FILTROS_AVANZADOS_PUBLIC = '__eventostriSearchAdvancedFiltersPublic';
     const CLAVE_FILTROS_CHECKS_PUBLIC = '__eventostriSearchCheckFiltersPublic';
+    const CLAVE_FAVORITOS_EVENTOS = '__eventostriFavoriteEventIds';
+    const CLAVE_FAVORITOS_MERGE = '__eventostriFavoriteMergeState';
+    const CLAVE_FAVORITOS_SOLO = '__eventostriFavoritesOnlyFilterPublic';
     const calendarioConfig = window.eventostriCalendarioConfig || {};
     const calendarioRestConfig = calendarioConfig.rest || {};
     const calendarioSettingsConfig = calendarioConfig.settings || {};
     const defaultEventImageUrl = String(calendarioSettingsConfig.default_event_image_url || '').trim();
     const urlJSON = calendarioRestConfig.eventosUrl || calendarioConfig.eventosUrl || '/wp-json/eventostri/v1/eventos';
+    const authStatusUrl = calendarioRestConfig.authStatusUrl || '/wp-json/eventostri/v1/auth-status';
+    const favoritesUrl = calendarioRestConfig.favoritesUrl || '/wp-json/eventostri/v1/favorites';
+    const favoritesToggleUrl = calendarioRestConfig.favoritesToggleUrl || '/wp-json/eventostri/v1/favorites/toggle';
+    const favoritesMergeUrl = calendarioRestConfig.favoritesMergeUrl || '/wp-json/eventostri/v1/favorites/merge';
+    const notificationPreferencesUrl = calendarioRestConfig.notificationPreferencesUrl || '/wp-json/eventostri/v1/notification-preferences';
+    const calendarFeedUrl = calendarioRestConfig.calendarFeedUrl || '/wp-json/eventostri/v1/calendar/feed.ics';
     let filtrosAvanzadosBusqueda = {
         dateFrom: '',
         dateTo: '',
@@ -37,6 +46,24 @@
         maxDistance: ''
     };
     let filtrosChecksPersistidos = { tipos: [], lugar: [] };
+    let favoritesIds = new Set();
+    let favoritoNonce = '';
+    let favoritoUserId = null;
+    let estadoAuthCache = null;
+    let soloFavoritos = false;
+    let ultimoEventoDetalleId = null;
+    let interaccionesDropdownFiltrosInicializadas = false;
+
+    try {
+        const favoritosRaw = JSON.parse(localStorage.getItem(CLAVE_FAVORITOS_EVENTOS) || '[]');
+        if (Array.isArray(favoritosRaw)) {
+            favoritesIds = new Set(favoritosRaw.map(function(v) { return parseInt(v, 10); }).filter(function(v) { return Number.isInteger(v) && v > 0; }));
+        }
+        soloFavoritos = localStorage.getItem(CLAVE_FAVORITOS_SOLO) === '1';
+    } catch (error) {
+        favoritesIds = new Set();
+        soloFavoritos = false;
+    }
 
     if (!window.FullCalendar) {
         return;
@@ -188,7 +215,7 @@
         });
         const horaFmt = hora.replace(/\s/g, '').replace(/\./g, '').replace(/(?<=\d)(AM|PM)/i, ' $1');
 
-        return diaSemanaFmt + ', ' + diaFmt + ' de ' + mesFmt + ' de ' + anio + ' Â· ' + horaFmt;
+        return diaSemanaFmt + ', ' + diaFmt + ' de ' + mesFmt + ' de ' + anio + ' · ' + horaFmt;
     }
 
     function normalizarTextoBusqueda(valor) {
@@ -216,6 +243,380 @@
         } catch (error) {
             return;
         }
+    }
+
+    function normalizarIdEvento(valor) {
+        const id = parseInt(valor, 10);
+        return Number.isInteger(id) && id > 0 ? id : null;
+    }
+
+    function obtenerIdEventoDesdeDatos(eventoDatos) {
+        return normalizarIdEvento(obtenerPropiedad(eventoDatos, 'id'));
+    }
+
+    function obtenerIdEventoDesdeFullCalendar(eventoCalendario) {
+        if (!eventoCalendario) return null;
+        return normalizarIdEvento(eventoCalendario.extendedProps && eventoCalendario.extendedProps.eventId);
+    }
+
+    function guardarFavoritosLocales() {
+        guardarJSONLocalStorage(CLAVE_FAVORITOS_EVENTOS, Array.from(favoritesIds.values()));
+    }
+
+    function establecerFavoritos(ids) {
+        favoritesIds = new Set((Array.isArray(ids) ? ids : []).map(function(v) {
+            return normalizarIdEvento(v);
+        }).filter(Boolean));
+        guardarFavoritosLocales();
+    }
+
+    function esFavorito(idEvento) {
+        const id = normalizarIdEvento(idEvento);
+        return id !== null && favoritesIds.has(id);
+    }
+
+    function actualizarBotonFavorito(boton, activo) {
+        if (!boton) return;
+        boton.classList.toggle('is-favorite', activo);
+        boton.setAttribute('aria-pressed', activo ? 'true' : 'false');
+        boton.setAttribute('title', activo ? 'Quitar de favoritos' : 'Agregar a favoritos');
+        boton.textContent = activo ? '★' : '☆';
+    }
+
+    function actualizarModalFavoritoActivo() {
+        const modal = document.getElementById('modal-evento-calendario');
+        if (!modal) return;
+        const boton = modal.querySelector('.evento-modal-favorite-btn');
+        if (!boton) return;
+        if (ultimoEventoDetalleId === null) {
+            boton.style.display = 'none';
+            boton.removeAttribute('data-event-id');
+            return;
+        }
+        boton.style.display = '';
+        boton.dataset.eventId = String(ultimoEventoDetalleId);
+        actualizarBotonFavorito(boton, esFavorito(ultimoEventoDetalleId));
+    }
+
+    function construirUrlConParametro(url, key, value) {
+        try {
+            const parsed = new URL(url, window.location.origin);
+            parsed.searchParams.set(key, String(value));
+            return parsed.toString();
+        } catch (error) {
+            const separador = String(url).includes('?') ? '&' : '?';
+            return String(url) + separador + encodeURIComponent(key) + '=' + encodeURIComponent(String(value));
+        }
+    }
+
+    function obtenerNonceFavoritos() {
+        if (favoritoNonce) return favoritoNonce;
+        const metaNonce = document.querySelector('meta[name="wp-rest-nonce"]');
+        return metaNonce && metaNonce.content ? metaNonce.content : '';
+    }
+
+    async function enviarJsonFavoritos(url, opciones) {
+        const headers = Object.assign({}, opciones && opciones.headers ? opciones.headers : {});
+        const nonce = obtenerNonceFavoritos();
+        if (nonce) headers['X-WP-Nonce'] = nonce;
+        if (!Object.prototype.hasOwnProperty.call(headers, 'Content-Type')) {
+            headers['Content-Type'] = 'application/json';
+        }
+
+        const respuesta = await fetch(url, Object.assign({}, opciones || {}, {
+            credentials: 'same-origin',
+            headers: headers
+        }));
+
+        if (!respuesta.ok) {
+            throw new Error('HTTP ' + respuesta.status);
+        }
+
+        return await respuesta.json();
+    }
+
+    async function inicializarFavoritosAutenticados() {
+        try {
+            const estado = await obtenerEstadoAutenticacion();
+            if (!estado || !estado.logged_in) return;
+
+            favoritoNonce = String(estado.nonce || '').trim();
+            favoritoUserId = normalizarIdEvento(estado.user && estado.user.id);
+
+            const serverData = await enviarJsonFavoritos(favoritesUrl, { method: 'GET' });
+            let serverIds = Array.isArray(serverData && serverData.favorites) ? serverData.favorites : [];
+            const localIds = Array.from(favoritesIds.values());
+            const serverSet = new Set(serverIds.map(function(v) { return normalizarIdEvento(v); }).filter(Boolean));
+            const mergeNeeded = localIds.some(function(id) { return !serverSet.has(id); });
+
+            if (mergeNeeded && localIds.length > 0) {
+                const mergeData = await enviarJsonFavoritos(favoritesMergeUrl, {
+                    method: 'POST',
+                    body: JSON.stringify({ event_ids: localIds })
+                });
+                if (mergeData && Array.isArray(mergeData.favorites)) {
+                    serverIds = mergeData.favorites;
+                    guardarJSONLocalStorage(CLAVE_FAVORITOS_MERGE, {
+                        userId: favoritoUserId,
+                        lastMergedAt: new Date().toISOString()
+                    });
+                }
+            }
+
+            establecerFavoritos(serverIds);
+            actualizarCalendarioDinamico(obtenerEventosFiltradosActuales());
+            actualizarModalFavoritoActivo();
+        } catch (error) {
+            console.warn('No se pudieron sincronizar favoritos autenticados:', error);
+        }
+    }
+
+    async function obtenerEstadoAutenticacion() {
+        if (estadoAuthCache && (Date.now() - estadoAuthCache.timestamp) < 30000) {
+            return estadoAuthCache.value;
+        }
+
+        const estadoRes = await fetch(construirUrlConParametro(authStatusUrl, '_ts', Date.now()), {
+            cache: 'no-store',
+            credentials: 'same-origin'
+        });
+        if (!estadoRes.ok) {
+            throw new Error('HTTP ' + estadoRes.status);
+        }
+
+        const estado = await estadoRes.json();
+        estadoAuthCache = {
+            value: estado,
+            timestamp: Date.now()
+        };
+
+        return estado;
+    }
+
+    async function alternarFavoritoPorId(idEvento) {
+        const id = normalizarIdEvento(idEvento);
+        if (id === null) return;
+
+        try {
+            if (favoritoUserId !== null) {
+                const data = await enviarJsonFavoritos(favoritesToggleUrl, {
+                    method: 'POST',
+                    body: JSON.stringify({ event_id: id })
+                });
+                if (data && Array.isArray(data.favorites)) {
+                    establecerFavoritos(data.favorites);
+                }
+            } else {
+                if (favoritesIds.has(id)) {
+                    favoritesIds.delete(id);
+                } else {
+                    favoritesIds.add(id);
+                }
+                guardarFavoritosLocales();
+            }
+        } catch (error) {
+            console.warn('No se pudo alternar favorito:', error);
+            return;
+        }
+
+        actualizarCalendarioDinamico(obtenerEventosFiltradosActuales());
+        actualizarModalFavoritoActivo();
+    }
+
+    function crearModalPreferenciasNotificacion() {
+        const existente = document.getElementById('evento-notification-modal');
+        if (existente) {
+            return existente;
+        }
+
+        const overlay = document.createElement('div');
+        overlay.id = 'evento-notification-modal';
+        overlay.className = 'evento-search-modal-overlay evento-notification-modal-overlay';
+        overlay.innerHTML = [
+            '<div class="evento-search-modal-card evento-notification-modal-card">',
+            '<button type="button" class="evento-search-modal-close" aria-label="Cerrar preferencias">&times;</button>',
+            '<h3 class="evento-search-modal-title">Preferencias de notificaciones</h3>',
+            '<p class="evento-search-modal-shortcut">Activa o desactiva recordatorios por correo para tus eventos favoritos.</p>',
+            '<p class="evento-notification-modal-message" role="status" aria-live="polite"></p>',
+            '<div class="evento-notification-form" hidden>',
+            '<label class="checkbox-label"><div><input type="checkbox" id="eventostri-pref-day-before" style="margin-right:8px;"><span>Recordatorio un dia antes</span></div></label>',
+            '<label class="checkbox-label"><div><input type="checkbox" id="eventostri-pref-day-of" style="margin-right:8px;"><span>Recordatorio el mismo dia</span></div></label>',
+            '<button type="button" class="search-modal-trigger evento-notification-save">Guardar preferencias</button>',
+            '</div>',
+            '</div>'
+        ].join('');
+
+        function solicitarCierrePreferencias(evento) {
+            if (evento) {
+                evento.preventDefault();
+                evento.stopPropagation();
+            }
+            cerrarModalPreferenciasNotificacion(false);
+        }
+
+        overlay.addEventListener('click', function(e) {
+            if (e.target === overlay) {
+                solicitarCierrePreferencias(e);
+            }
+        });
+
+        const closeBtn = overlay.querySelector('.evento-search-modal-close');
+        if (closeBtn) {
+            closeBtn.addEventListener('click', solicitarCierrePreferencias);
+            closeBtn.addEventListener('touchend', solicitarCierrePreferencias, { passive: false });
+        }
+
+        const saveBtn = overlay.querySelector('.evento-notification-save');
+        if (saveBtn) {
+            saveBtn.addEventListener('click', async function() {
+                const form = overlay.querySelector('.evento-notification-form');
+                const message = overlay.querySelector('.evento-notification-modal-message');
+                const checkBefore = overlay.querySelector('#eventostri-pref-day-before');
+                const checkDayOf = overlay.querySelector('#eventostri-pref-day-of');
+                if (!form || form.hidden || !checkBefore || !checkDayOf) {
+                    return;
+                }
+
+                saveBtn.disabled = true;
+                if (message) {
+                    message.textContent = 'Guardando preferencias...';
+                }
+
+                try {
+                    const data = await enviarJsonFavoritos(notificationPreferencesUrl, {
+                        method: 'PUT',
+                        body: JSON.stringify({
+                            preferences: {
+                                favorite_day_before: Boolean(checkBefore.checked),
+                                favorite_day_of: Boolean(checkDayOf.checked)
+                            }
+                        })
+                    });
+
+                    const prefs = (data && data.preferences) ? data.preferences : {};
+                    checkBefore.checked = Boolean(prefs.favorite_day_before);
+                    checkDayOf.checked = Boolean(prefs.favorite_day_of);
+                    if (message) {
+                        message.textContent = 'Preferencias guardadas correctamente.';
+                    }
+                    cerrarModalPreferenciasNotificacion(false);
+                } catch (error) {
+                    if (message) {
+                        message.textContent = 'No fue posible guardar. Intenta de nuevo.';
+                    }
+                } finally {
+                    saveBtn.disabled = false;
+                }
+            });
+        }
+
+        document.body.appendChild(overlay);
+        return overlay;
+    }
+
+    async function abrirModalPreferenciasNotificacion() {
+        const modal = crearModalPreferenciasNotificacion();
+        const form = modal.querySelector('.evento-notification-form');
+        const message = modal.querySelector('.evento-notification-modal-message');
+        const checkBefore = modal.querySelector('#eventostri-pref-day-before');
+        const checkDayOf = modal.querySelector('#eventostri-pref-day-of');
+
+        if (message) {
+            message.textContent = 'Cargando estado de sesion...';
+        }
+        if (form) {
+            form.hidden = true;
+        }
+
+        try {
+            const estado = await obtenerEstadoAutenticacion();
+            if (!estado || !estado.logged_in) {
+                if (message) {
+                    message.textContent = 'Debes iniciar sesion para guardar preferencias de notificacion.';
+                }
+            } else {
+                favoritoNonce = String(estado.nonce || '').trim();
+                const data = await enviarJsonFavoritos(notificationPreferencesUrl, { method: 'GET' });
+                const prefs = (data && data.preferences) ? data.preferences : {};
+
+                if (checkBefore) {
+                    checkBefore.checked = Boolean(prefs.favorite_day_before);
+                }
+                if (checkDayOf) {
+                    checkDayOf.checked = Boolean(prefs.favorite_day_of);
+                }
+                if (form) {
+                    form.hidden = false;
+                }
+                if (message) {
+                    message.textContent = 'Configura tus recordatorios y guarda.';
+                }
+            }
+        } catch (error) {
+            if (message) {
+                message.textContent = 'No se pudo cargar el centro de preferencias.';
+            }
+        }
+
+        const yaAbierto = modal.classList.contains('is-open');
+        modal.removeAttribute('hidden');
+        modal.classList.add('is-open');
+        if (!yaAbierto) {
+            registrarModalEnHistorial('notification');
+        }
+    }
+
+    function cerrarModalPreferenciasNotificacion(desdePopstate) {
+        const modal = document.getElementById('evento-notification-modal');
+        if (!modal || !modal.classList.contains('is-open')) {
+            return;
+        }
+
+        modal.classList.remove('is-open');
+        modal.setAttribute('hidden', 'hidden');
+        removerModalDeHistorial('notification', Boolean(desdePopstate));
+    }
+
+    function inicializarCentroPreferenciasNotificacion() {
+        const wrapperEventos = document.querySelector('.wrapper-eventos');
+        if (!wrapperEventos || document.querySelector('.evento-notification-trigger')) {
+            return;
+        }
+
+        const boton = document.createElement('button');
+        boton.type = 'button';
+        boton.className = 'search-modal-trigger evento-notification-trigger';
+        boton.textContent = 'Preferencias de notificacion';
+        boton.addEventListener('click', function() {
+            abrirModalPreferenciasNotificacion();
+        });
+
+        wrapperEventos.appendChild(boton);
+    }
+
+    function inicializarFiltroSoloFavoritos() {
+        const filtrosContainer = document.querySelector('.filtros-container');
+        if (!filtrosContainer || document.getElementById('filtro-solo-favoritos')) {
+            return;
+        }
+
+        const grupo = document.createElement('div');
+        grupo.className = 'filtro-grupo';
+        grupo.innerHTML = '<div class="checkbox-group-box"><label class="checkbox-label"><div><input type="checkbox" id="filtro-solo-favoritos" style="margin-right:8px;"><span>Ver solo favoritos</span></div></label></div>';
+        filtrosContainer.insertBefore(grupo, filtrosContainer.firstElementChild);
+
+        const check = grupo.querySelector('#filtro-solo-favoritos');
+        if (!check) return;
+        check.checked = soloFavoritos;
+        check.addEventListener('change', function() {
+            soloFavoritos = Boolean(check.checked);
+            try {
+                localStorage.setItem(CLAVE_FAVORITOS_SOLO, soloFavoritos ? '1' : '0');
+            } catch (error) {
+                // Ignore localStorage write failures.
+            }
+            actualizarCalendarioDinamico(obtenerEventosFiltradosActuales());
+        });
     }
 
     function parsearDistanciasEvento(evento) {
@@ -312,6 +713,7 @@
             return;
         }
         modal.classList.remove('is-open');
+        ultimoEventoDetalleId = null;
         removerModalDeHistorial('detalle', Boolean(desdePopstate));
     }
 
@@ -334,6 +736,11 @@
 
             if (ultimoModal === 'search') {
                 cerrarModalBusquedaEventos(true);
+                return;
+            }
+
+            if (ultimoModal === 'notification') {
+                cerrarModalPreferenciasNotificacion(true);
                 return;
             }
 
@@ -462,10 +869,13 @@
             '<div class="evento-modal-card">',
             '<button class="evento-modal-close" aria-label="Cerrar detalle">&times;</button>',
             '<div class="evento-modal-image-wrap">',
-            '<img class="evento-modal-image" alt="Imagen del evento">',
+            '<img class="evento-modal-image" alt="Imagen del evento" loading="lazy" decoding="async">',
             '</div>',
             '<div class="evento-modal-content">',
             '<h3 class="evento-modal-title"></h3>',
+            '<div class="evento-modal-actions">',
+            '<button type="button" class="evento-modal-favorite-btn" aria-pressed="false" title="Agregar a favoritos">☆</button>',
+            '</div>',
             '<div class="evento-modal-meta">',
             '<span class="evento-modal-label">LUGAR</span>',
             '<p class="evento-modal-place"></p>',
@@ -493,6 +903,10 @@
             '<div class="evento-modal-meta evento-modal-description-block">',
             '<p class="evento-modal-description"></p>',
             '</div>',
+            '<div class="evento-modal-meta evento-modal-calendar-block">',
+            '<span class="evento-modal-label">CALENDARIO</span>',
+            '<div class="evento-modal-calendar-wrap"></div>',
+            '</div>',
             '</div>',
             '</div>'
         ].join('');
@@ -507,6 +921,15 @@
             cerrarModalDetalleEvento(false);
         });
 
+        const favoriteBtn = overlay.querySelector('.evento-modal-favorite-btn');
+        if (favoriteBtn) {
+            favoriteBtn.addEventListener('click', function() {
+                const id = normalizarIdEvento(favoriteBtn.dataset.eventId);
+                if (id === null) return;
+                alternarFavoritoPorId(id);
+            });
+        }
+
         document.body.appendChild(overlay);
         return overlay;
     }
@@ -520,6 +943,8 @@
         const fecha = modal.querySelector('.evento-modal-date');
         const distancias = modal.querySelector('.evento-modal-distances');
         const linkWrap = modal.querySelector('.evento-modal-link-wrap');
+        const calendarWrap = modal.querySelector('.evento-modal-calendar-wrap');
+        const calendarBlock = modal.querySelector('.evento-modal-calendar-block');
         const inscripcionWrap = modal.querySelector('.evento-modal-inscripcion-wrap');
         const whatsappWrap = modal.querySelector('.evento-modal-whatsapp-wrap');
         const inscripcionBlock = modal.querySelector('.evento-modal-inscripcion-block');
@@ -541,6 +966,10 @@
         const fechaTexto = datos.fechaFormateada || formatearFecha(evento.start || datos.fecha_hora);
         const distanciasTexto = datos.distancias || '';
         const descripcionTexto = datos.descripcion || '';
+        const eventId = obtenerIdEventoDesdeFullCalendar(evento);
+        const calendarActions = (datos.calendarActions && typeof datos.calendarActions === 'object')
+            ? datos.calendarActions
+            : {};
 
         titulo.textContent = tituloTexto;
         lugar.textContent = lugarTexto;
@@ -549,6 +978,8 @@
         descripcionBlock.style.display = descripcionTexto ? '' : 'none';
 
         if (imagenFinal) {
+            imagen.setAttribute('loading', 'lazy');
+            imagen.setAttribute('decoding', 'async');
             imagen.src = imagenFinal;
             imagen.style.display = 'block';
             imageWrap.style.display = '';
@@ -578,12 +1009,30 @@
         if (url) {
             if (/facebook\.com|fb\.me|fb\.com/i.test(url)) {
                 const icon = document.createElement('a');
-                icon.className = 'evento-modal-facebook-icon';
+                icon.className = 'evento-modal-social-icon evento-modal-social-icon--facebook';
                 icon.href = url;
                 icon.target = '_blank';
                 icon.rel = 'noopener noreferrer';
                 icon.setAttribute('aria-label', 'Abrir Facebook del evento');
                 icon.innerHTML = 'f';
+                linkWrap.appendChild(icon);
+            } else if (/instagram\.com|instagr\.am/i.test(url)) {
+                const icon = document.createElement('a');
+                icon.className = 'evento-modal-social-icon evento-modal-social-icon--instagram';
+                icon.href = url;
+                icon.target = '_blank';
+                icon.rel = 'noopener noreferrer';
+                icon.setAttribute('aria-label', 'Abrir Instagram del evento');
+                icon.textContent = 'IG';
+                linkWrap.appendChild(icon);
+            } else if (/youtube\.com|youtu\.be/i.test(url)) {
+                const icon = document.createElement('a');
+                icon.className = 'evento-modal-social-icon evento-modal-social-icon--youtube';
+                icon.href = url;
+                icon.target = '_blank';
+                icon.rel = 'noopener noreferrer';
+                icon.setAttribute('aria-label', 'Abrir YouTube del evento');
+                icon.textContent = 'YT';
                 linkWrap.appendChild(icon);
             } else {
                 const enlace = document.createElement('a');
@@ -596,6 +1045,33 @@
             }
         } else {
             linkWrap.innerHTML = '<span class="evento-modal-url-link evento-modal-url-link--disabled">Sin enlace disponible</span>';
+        }
+
+        if (calendarWrap && calendarBlock) {
+            calendarWrap.innerHTML = '';
+            const acciones = [
+                { href: calendarActions.google_url, label: 'Agregar a Google' },
+                { href: calendarActions.outlook_url, label: 'Agregar a Outlook' },
+                { href: calendarActions.ics_url, label: 'Descargar ICS' },
+                { href: calendarFeedUrl, label: 'Enlace para suscribirse' }
+            ].filter(function(item) {
+                return typeof item.href === 'string' && item.href.trim() !== '';
+            });
+
+            if (acciones.length > 0) {
+                acciones.forEach(function(accion) {
+                    const enlace = document.createElement('a');
+                    enlace.className = 'evento-modal-url-link';
+                    enlace.href = accion.href;
+                    enlace.target = '_blank';
+                    enlace.rel = 'noopener noreferrer';
+                    enlace.textContent = accion.label;
+                    calendarWrap.appendChild(enlace);
+                });
+                calendarBlock.style.display = '';
+            } else {
+                calendarBlock.style.display = 'none';
+            }
         }
 
         inscripcionWrap.innerHTML = '';
@@ -639,6 +1115,9 @@
             whatsappBlock.style.display = 'none';
         }
 
+        ultimoEventoDetalleId = eventId;
+        actualizarModalFavoritoActivo();
+
         const modalYaAbierto = modal.classList.contains('is-open');
         modal.classList.add('is-open');
         if (!modalYaAbierto) {
@@ -666,7 +1145,6 @@
             '<label style="display:flex;flex-direction:column;font-size:12px;">Distancia máxima (km)<input type="number" step="0.1" min="0" id="evento-search-filter-distance-max" placeholder="42"></label>',
             '<label style="display:flex;flex-direction:column;font-size:12px;">Organizador<input type="text" id="evento-search-filter-organizer" placeholder="Nombre organizador"></label>',
             '<label style="display:flex;flex-direction:column;font-size:12px;">Estado<input type="text" id="evento-search-filter-status" placeholder="YUC/CAM/QROO"></label>',
-            '<label style="display:flex;flex-direction:column;font-size:12px;">Max distancia (km)<input type="number" step="0.1" min="0" id="evento-search-filter-max-distance" placeholder="Opcional"></label>',
             '<div style="display:flex;align-items:end;gap:8px;"><span id="evento-search-filter-badge" style="display:inline-flex;align-items:center;justify-content:center;min-width:22px;height:22px;padding:0 8px;border-radius:999px;background:#e2e8f0;font-size:12px;">0</span><button type="button" id="evento-search-filter-clear" class="button">Limpiar filtros</button></div>',
             '</div>',
             '<input type="text" id="evento-search-modal-input" class="evento-search-modal-input" autocomplete="off" placeholder="Buscar por nombre de evento..." aria-label="Buscar por nombre de evento">',
@@ -674,12 +1152,6 @@
             '<ul id="evento-search-modal-results" class="evento-search-modal-results" role="listbox" aria-label="Resultados de busqueda"></ul>',
             '</div>'
         ].join('');
-
-        overlay.addEventListener('click', function(e) {
-            if (e.target === overlay) {
-                cerrarModalBusquedaEventos();
-            }
-        });
 
         document.body.appendChild(overlay);
         return overlay;
@@ -761,6 +1233,7 @@
         return obtenerEventosPublicosBase().filter(function(evento) {
             const eventoTipos = obtenerTiposArray(evento);
             const eventoLugar = obtenerPropiedad(evento, 'lugar');
+            const eventoId = obtenerIdEventoDesdeDatos(evento);
 
             const coincideTipo = tiposCheck.length === 0 || tiposCheck.some(function(tipoFiltro) {
                 return eventoTipos.some(function(tipoEvento) {
@@ -770,8 +1243,9 @@
             const coincideLugar = lugaresCheck.length === 0 || lugaresCheck.some(function(lugarFiltro) {
                 return String(eventoLugar).toLowerCase() === lugarFiltro.toLowerCase();
             });
+            const coincideFavoritos = !soloFavoritos || (eventoId !== null && esFavorito(eventoId));
 
-            return coincideTipo && coincideLugar;
+            return coincideTipo && coincideLugar && coincideFavoritos;
         });
     }
 
@@ -851,7 +1325,7 @@
         }
 
         if (!terminoVisible) {
-            elementos.status.textContent = 'Escribe para buscar eventos por nombre.' + (filtrosActivos ? (' Filtros activos: ' + filtrosActivos + '.') : '');
+            elementos.status.textContent = filtrosActivos ? ('Filtros activos: ' + filtrosActivos + '.') : '';
             indiceActivoBusquedaModal = -1;
             return;
         }
@@ -873,7 +1347,7 @@
             const titulo = detectarTitulo(evento);
             const fecha = formatearFecha(detectarFecha(evento));
             const lugar = obtenerPropiedad(evento, 'lugar') || 'Sin lugar';
-            const tipos = obtenerTiposArray(evento).join(' Â· ') || 'Sin tipo';
+            const tipos = obtenerTiposArray(evento).join(' · ') || 'Sin tipo';
 
             const li = document.createElement('li');
             li.className = 'evento-search-result-item';
@@ -890,7 +1364,7 @@
                 '<span class="evento-search-result-type"></span>'
             ].join('');
             boton.querySelector('.evento-search-result-title').textContent = titulo;
-            boton.querySelector('.evento-search-result-meta').textContent = (fecha || 'Fecha pendiente') + ' Â· ' + lugar;
+            boton.querySelector('.evento-search-result-meta').textContent = (fecha || 'Fecha pendiente') + ' · ' + lugar;
             boton.querySelector('.evento-search-result-type').textContent = tipos;
             boton.addEventListener('mouseenter', function() {
                 actualizarIndiceActivoBusquedaModal(indice);
@@ -925,8 +1399,7 @@
         elementos.input.value = terminoBusquedaModal;
         renderizarResultadosBusquedaModal();
         setTimeout(function() {
-            elementos.input.focus();
-            elementos.input.select();
+            elementos.filterDateFrom.focus();
         }, 0);
     }
 
@@ -1038,9 +1511,18 @@
             if (atajoBusqueda) {
                 e.preventDefault();
                 abrirModalBusquedaEventos(searchInput ? searchInput.value : '');
-            } else if (tecla === 'escape' && elementos.modal.classList.contains('is-open')) {
-                e.preventDefault();
-                cerrarModalBusquedaEventos();
+            } else if (tecla === 'escape') {
+                if (elementos.modal.classList.contains('is-open')) {
+                    e.preventDefault();
+                    cerrarModalBusquedaEventos();
+                    return;
+                }
+
+                const preferenciasModal = document.getElementById('evento-notification-modal');
+                if (preferenciasModal && preferenciasModal.classList.contains('is-open')) {
+                    e.preventDefault();
+                    cerrarModalPreferenciasNotificacion(false);
+                }
             }
         });
     }
@@ -1075,12 +1557,16 @@
         const basePublica = obtenerEventosPublicosBase();
         generarCheckboxes(basePublica, 'tipos', 'filtro-tipo-container');
         generarCheckboxes(basePublica, 'lugar', 'filtro-lugar-container');
+        inicializarInteraccionesDropdownFiltros();
+        inicializarFiltroSoloFavoritos();
+        inicializarCentroPreferenciasNotificacion();
         if (searchInput && clearSearchBtn) {
             inicializarBuscadorEventos(searchInput, clearSearchBtn);
         }
         inicializarGestorBackGesturesModales();
         inicializarBusquedaModalEventos(searchInput);
         actualizarCalendarioDinamico(obtenerEventosFiltradosActuales());
+        inicializarFavoritosAutenticados();
         return true;
     }
 
@@ -1263,6 +1749,48 @@
         guardarJSONLocalStorage(CLAVE_FILTROS_CHECKS_PUBLIC, filtrosChecksPersistidos);
     }
 
+    function cerrarDropdownsFiltros(exceptoDropdown) {
+        const abiertos = document.querySelectorAll('.evento-filter-dropdown.is-open');
+        abiertos.forEach(function(dropdown) {
+            if (exceptoDropdown && dropdown === exceptoDropdown) {
+                return;
+            }
+            dropdown.classList.remove('is-open');
+            const trigger = dropdown.querySelector('.evento-filter-dropdown-trigger');
+            const panel = dropdown.querySelector('.evento-filter-dropdown-panel');
+            if (trigger) {
+                trigger.setAttribute('aria-expanded', 'false');
+            }
+            if (panel) {
+                panel.setAttribute('hidden', 'hidden');
+            }
+        });
+    }
+
+    function inicializarInteraccionesDropdownFiltros() {
+        if (interaccionesDropdownFiltrosInicializadas) {
+            return;
+        }
+        interaccionesDropdownFiltrosInicializadas = true;
+
+        document.addEventListener('click', function(e) {
+            const target = e.target;
+            if (!(target instanceof Element)) {
+                cerrarDropdownsFiltros();
+                return;
+            }
+            if (!target.closest('.evento-filter-dropdown')) {
+                cerrarDropdownsFiltros();
+            }
+        });
+
+        document.addEventListener('keydown', function(e) {
+            if (String(e.key || '') === 'Escape') {
+                cerrarDropdownsFiltros();
+            }
+        });
+    }
+
     function generarCheckboxes(eventos, propiedad, contenedorId) {
         const contenedor = document.getElementById(contenedorId);
         if (!contenedor) return;
@@ -1289,19 +1817,122 @@
         }
 
         contenedor.innerHTML = '';
+        contenedor.classList.add('evento-filter-root');
         const seleccionGuardada = new Set((filtrosChecksPersistidos[propiedad] || []).map(function(v) { return String(v).toLowerCase(); }));
+
+        const etiquetaFiltro = propiedad === 'lugar' ? 'Lugar' : 'Tipo';
+        const dropdown = document.createElement('div');
+        dropdown.className = 'evento-filter-dropdown';
+
+        const trigger = document.createElement('button');
+        trigger.type = 'button';
+        trigger.className = 'evento-filter-dropdown-trigger';
+        trigger.setAttribute('aria-haspopup', 'true');
+        trigger.setAttribute('aria-expanded', 'false');
+
+        const panel = document.createElement('div');
+        panel.className = 'evento-filter-dropdown-panel';
+        panel.setAttribute('hidden', 'hidden');
+
+        const actions = document.createElement('div');
+        actions.className = 'evento-filter-dropdown-actions';
+
+        const seleccionarTodoBtn = document.createElement('button');
+        seleccionarTodoBtn.type = 'button';
+        seleccionarTodoBtn.className = 'evento-filter-dropdown-action';
+        seleccionarTodoBtn.textContent = 'Seleccionar todo';
+
+        const limpiarBtn = document.createElement('button');
+        limpiarBtn.type = 'button';
+        limpiarBtn.className = 'evento-filter-dropdown-action';
+        limpiarBtn.textContent = 'Limpiar';
+
+        actions.appendChild(seleccionarTodoBtn);
+        actions.appendChild(limpiarBtn);
+
+        const lista = document.createElement('div');
+        lista.className = 'evento-filter-dropdown-list';
+
+        function actualizarResumenTrigger() {
+            const checkedCount = lista.querySelectorAll('input:checked').length;
+            if (opcionesOrdenadas.length === 0) {
+                trigger.textContent = etiquetaFiltro + ' (Sin opciones)';
+                return;
+            }
+            if (checkedCount === 0) {
+                trigger.textContent = etiquetaFiltro + ' (Todos)';
+                return;
+            }
+            trigger.textContent = etiquetaFiltro + ' (' + checkedCount + ')';
+        }
+
+        function aplicarSeleccionMasiva(checked) {
+            lista.querySelectorAll('input[type="checkbox"]').forEach(function(input) {
+                input.checked = checked;
+            });
+            guardarFiltrosChecksPublicos();
+            actualizarResumenTrigger();
+            actualizarCalendarioDinamico(obtenerEventosFiltradosActuales());
+        }
+
         opcionesOrdenadas.forEach(function(opcion) {
             const label = document.createElement('label');
             label.className = 'checkbox-label';
-            label.innerHTML = '<div><input type="checkbox" value="' + opcion + '" style="margin-right:8px;"><span>' + opcion + '</span></div>';
-            const checkbox = label.querySelector('input');
+            const row = document.createElement('div');
+            const checkbox = document.createElement('input');
+            const text = document.createElement('span');
+            checkbox.type = 'checkbox';
+            checkbox.value = opcion;
+            checkbox.style.marginRight = '8px';
+            text.textContent = opcion;
+
+            row.appendChild(checkbox);
+            row.appendChild(text);
+            label.appendChild(row);
+
             checkbox.checked = seleccionGuardada.has(String(opcion).toLowerCase());
             checkbox.addEventListener('change', function() {
                 guardarFiltrosChecksPublicos();
+                actualizarResumenTrigger();
                 actualizarCalendarioDinamico(obtenerEventosFiltradosActuales());
             });
-            contenedor.appendChild(label);
+            lista.appendChild(label);
         });
+
+        trigger.addEventListener('click', function(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            const abrir = !dropdown.classList.contains('is-open');
+            cerrarDropdownsFiltros(dropdown);
+            dropdown.classList.toggle('is-open', abrir);
+            trigger.setAttribute('aria-expanded', abrir ? 'true' : 'false');
+            if (abrir) {
+                panel.removeAttribute('hidden');
+            } else {
+                panel.setAttribute('hidden', 'hidden');
+            }
+        });
+
+        panel.addEventListener('click', function(e) {
+            e.stopPropagation();
+        });
+
+        seleccionarTodoBtn.addEventListener('click', function(e) {
+            e.preventDefault();
+            aplicarSeleccionMasiva(true);
+        });
+
+        limpiarBtn.addEventListener('click', function(e) {
+            e.preventDefault();
+            aplicarSeleccionMasiva(false);
+        });
+
+        panel.appendChild(actions);
+        panel.appendChild(lista);
+        dropdown.appendChild(trigger);
+        dropdown.appendChild(panel);
+        contenedor.appendChild(dropdown);
+        actualizarResumenTrigger();
     }
 
     function calcularDiasAOcultar(eventosFiltrados, rangoVisible) {
@@ -1357,6 +1988,11 @@
                 }
             }, 650);
         });
+    }
+
+    function debeMostrarIndicadorFavoritoEnVista(viewType) {
+        // Show favorite star marker in month, week, and list views.
+        return viewType === 'dayGridMonth' || viewType === 'timeGridWeek' || /^list/.test(viewType);
     }
 
     function aplicarDiasOcultosPorMes(eventosFiltrados) {
@@ -1418,6 +2054,21 @@
                 el.style.boxShadow = 'inset 0 0 0 1px rgba(255,255,255,0.12)';
                 const title = el.querySelector('.fc-event-title');
                 if (title) title.style.color = colores.textColor;
+
+                const eventId = normalizarIdEvento(extendedProps.eventId);
+                if (
+                    eventId !== null &&
+                    esFavorito(eventId) &&
+                    info.view &&
+                    debeMostrarIndicadorFavoritoEnVista(info.view.type)
+                ) {
+                    const marker = document.createElement('span');
+                    marker.className = 'evento-favorite-indicator';
+                    marker.setAttribute('aria-label', 'Evento favorito');
+                    marker.title = 'Evento favorito';
+                    marker.textContent = '★';
+                    el.appendChild(marker);
+                }
             },
             eventClick: function(info) {
                 info.jsEvent.preventDefault();
@@ -1459,8 +2110,10 @@
             const descripcion = obtenerPropiedad(evento, 'descripcion');
             const inscripcionOnLine = obtenerPropiedad(evento, 'inscripciononline');
             const whatsapp = obtenerPropiedad(evento, 'whatsapp');
+            const calendarActions = obtenerPropiedad(evento, 'CalendarActions');
             const tiposArray = obtenerTiposArray(evento);
             const resolvedColor = obtenerPropiedad(evento, 'resolvedcolor') || obtenerPropiedad(evento, 'ResolvedColor') || '';
+            const eventId = obtenerIdEventoDesdeDatos(evento);
             const colores = obtenerColorFromResolvedColor(resolvedColor);
             const claveBusqueda = construirClaveEvento(evento);
             const claveBusquedaId = encodeURIComponent(claveBusqueda);
@@ -1487,11 +2140,14 @@
                     inscripciononline: inscripcionOnLine,
                     inscripcionesonline: inscripcionOnLine,
                     whatsapp: whatsapp,
+                    calendarActions: (calendarActions && typeof calendarActions === 'object') ? calendarActions : null,
                     link: link,
                     fecha_hora: fecha,
                     fechaFormateada: formatearFecha(fecha),
                     tipos: tiposArray,
-                    busquedaClave: claveBusqueda
+                    busquedaClave: claveBusqueda,
+                    eventId: eventId,
+                    isFavorite: eventId !== null && esFavorito(eventId)
                 }
             };
         }).filter(function(evento) {

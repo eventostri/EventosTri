@@ -4,6 +4,84 @@ param(
 
 $ErrorActionPreference = "Stop"
 
+function Get-SevenZipExecutable {
+    $sevenZipPaths = @(
+        "7z",
+        "C:\Program Files\7-Zip\7z.exe",
+        "C:\Program Files (x86)\7-Zip\7z.exe"
+    )
+
+    foreach ($path in $sevenZipPaths) {
+        if (Get-Command $path -ErrorAction SilentlyContinue) {
+            return $path
+        }
+    }
+
+    return $null
+}
+
+function Compress-GzipFile {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$FilePath
+    )
+
+    Add-Type -AssemblyName System.IO.Compression.FileSystem
+
+    $gzipPath = "$FilePath.gz"
+    if (Test-Path $gzipPath) {
+        Remove-Item $gzipPath -Force
+    }
+
+    $inputStream = [System.IO.File]::OpenRead($FilePath)
+    try {
+        $outputStream = [System.IO.File]::Create($gzipPath)
+        try {
+            $gzipStream = New-Object System.IO.Compression.GzipStream($outputStream, [System.IO.Compression.CompressionLevel]::Optimal)
+            try {
+                $inputStream.CopyTo($gzipStream)
+            }
+            finally {
+                $gzipStream.Dispose()
+            }
+        }
+        finally {
+            $outputStream.Dispose()
+        }
+    }
+    finally {
+        $inputStream.Dispose()
+    }
+}
+
+function Optimize-ThemeAssets {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$ThemeRoot
+    )
+
+    $assetFiles = Get-ChildItem -Path $ThemeRoot -Recurse -File |
+        Where-Object {
+            ($_.Extension -in @('.css', '.js')) -and
+            ($_.Name -notmatch '\.min\.(css|js)$')
+        }
+
+    foreach ($file in $assetFiles) {
+        # Safe minify-lite pass: normalize CRLF and collapse repeated blank lines.
+        $original = Get-Content -Path $file.FullName -Raw
+        $normalized = $original -replace "`r?`n", "`n"
+        $normalized = $normalized -replace "(`n){3,}", "`n`n"
+        $normalized = $normalized -replace "`n", "`r`n"
+
+        if ($normalized -ne $original) {
+            $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+            [System.IO.File]::WriteAllText($file.FullName, $normalized, $utf8NoBom)
+        }
+
+        Compress-GzipFile -FilePath $file.FullName
+    }
+}
+
 try {
     # Determine site root
     $siteRoot = ""
@@ -25,6 +103,25 @@ try {
     New-Item -ItemType Directory -Force -Path $distDir | Out-Null
     
     $zipPath = Join-Path $distDir "eventostri-calendar.zip"
+
+    $stagingRoot = Join-Path $distDir ".build-staging"
+    $stagingThemeDir = Join-Path $stagingRoot "eventostri-calendar"
+
+    if (Test-Path $stagingRoot) {
+        Remove-Item -Path $stagingRoot -Recurse -Force
+    }
+    New-Item -ItemType Directory -Force -Path $stagingRoot | Out-Null
+
+    Copy-Item -Path $themeDir -Destination $stagingRoot -Recurse -Force
+
+    # Preserve previous artifact shape by excluding parts from deployment zip.
+    $partsPath = Join-Path $stagingThemeDir "parts"
+    if (Test-Path $partsPath) {
+        Remove-Item -Path $partsPath -Recurse -Force
+    }
+
+    Write-Host "Running pre-zip asset optimization on staging copy..."
+    Optimize-ThemeAssets -ThemeRoot $stagingThemeDir
     
     # Backup existing zip with timestamp
     if (Test-Path $zipPath) {
@@ -34,20 +131,7 @@ try {
         Write-Host "Backed up: $backupName"
     }
     
-    # Use 7-Zip from PATH or common locations
-    $sevenZipPaths = @(
-        "7z",
-        "C:\Program Files\7-Zip\7z.exe",
-        "C:\Program Files (x86)\7-Zip\7z.exe"
-    )
-    
-    $sevenZipExe = $null
-    foreach ($path in $sevenZipPaths) {
-        if (Get-Command $path -ErrorAction SilentlyContinue) {
-            $sevenZipExe = $path
-            break
-        }
-    }
+    $sevenZipExe = Get-SevenZipExecutable
     
     if ($sevenZipExe) {
         Write-Host "Using 7-Zip to create archive..."
@@ -57,17 +141,20 @@ try {
             Remove-Item $zipPath -Force
         }
         
-        # Use 7-Zip: a = add to archive, -tzip = zip format, -r = recurse, -x!parts = exclude parts folder
+        # Use 7-Zip: a = add to archive, -tzip = zip format, -r = recurse
         $maxRetries = 3
         $attempt = 0
         
         while ($attempt -lt $maxRetries) {
             $attempt++
             try {
-                & $sevenZipExe a -tzip "$zipPath" "$themeDir" -r -x!parts | Out-Null
+                & $sevenZipExe a -tzip "$zipPath" "$stagingThemeDir" -r | Out-Null
                 
                 if (Test-Path $zipPath) {
                     Write-Host "Created: $zipPath"
+                    if (Test-Path $stagingRoot) {
+                        Remove-Item -Path $stagingRoot -Recurse -Force
+                    }
                     exit 0
                 }
                 else {
@@ -76,8 +163,7 @@ try {
             }
             catch {
                 if ($attempt -lt $maxRetries) {
-                    Write-Host "Attempt $attempt failed, retrying in 2s..."
-                    Start-Sleep -Seconds 2
+                    Write-Host "Attempt $attempt failed, retrying..."
                 }
                 else {
                     throw $_
