@@ -829,9 +829,16 @@ function eventostri_print_calendar_custom_css_variables() {
     $settings = eventostri_calendar_get_resolved_settings();
     $colors = $settings['colors'];
     $logo = $settings['branding_image_url'];
-    
-    // Determine which calendar context we're in
-    $is_admin = is_admin();
+
+    // Determine which calendar context we're in.
+    // The admin calendar can render on frontend pages/shortcodes, so is_admin() alone is insufficient.
+    $is_admin = false;
+    if (function_exists('eventostri_debe_cargar_admin_v2')) {
+        $is_admin = eventostri_debe_cargar_admin_v2();
+    } else {
+        $is_admin = is_admin();
+    }
+
     $header_image = $is_admin 
         ? $settings['header_image_admin'] 
         : $settings['header_image_public'];

@@ -132,7 +132,9 @@ function eventostri_notification_sanitize_preferences($value) {
             : (bool) $defaults['favorite_day_of'],
         'new_event_favorite_locations' => false,
         'new_event_favorite_types' => false,
-        'updated_at' => gmdate('c'),
+        'updated_at' => !empty($value['updated_at'])
+            ? sanitize_text_field((string) $value['updated_at'])
+            : gmdate('c'),
     );
 }
 
@@ -285,7 +287,7 @@ function eventostri_notification_log_insert($row) {
             'updated_at' => $now,
             'sent_at' => null,
         ),
-        array('%s', '%s', '%d', '%d', '%s', '%s', '%s', '%s', '%s', '%s')
+        array('%s', '%s', '%d', '%d', '%s', '%s', '%s', '%s', '%s', '%s', '%s')
     );
 
     if (!$inserted) {
